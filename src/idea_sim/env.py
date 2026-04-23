@@ -5,15 +5,12 @@ class GridWorld:
     def __init__(self,size):
         self.size = size
         self.grid = np.zeros((size,size))
-        self.agents: List[Agent] = []
+        self.agents = []
 
     def __str__(self):
-        self.update()
-        output = (
-            f"{'\n'.join([' '.join(map(str, row)) for row in self.grid])}\n"
-            f"Agents: {'\n'.join([f'{agent.id}: {agent.path}' for agent in self.agents])}"
-            )
-        return output
+        grid_string = f"{'\n'.join([' '.join(map(str, row)) for row in self.grid])}\n"
+        path_string = '\n'+'\n'.join([f"  {agent.id}: {'->'.join(map(str,agent.path))}" for agent in self.agents])
+        return grid_string+"Agent paths: "+path_string
     
     def update(self):
         for agent in self.agents:
@@ -25,14 +22,15 @@ class GridWorld:
                 else:
                     self.grid[row][col] = -1 * agent.id
                     
-    def init_agent(self, agent):
-        try:
-            assert 0 <= agent.row and 0 <= agent.col and agent.row < self.size and agent.col < self.size
-        except AssertionError:
-            print("Start position out of bounds.")
-            return
-        self.agents.append(agent)
-        agent.grid = self
+    def init_agent(self, agent_list: List[Agent]):
+        for agent in agent_list:
+            try:
+                assert 0 <= agent.row and 0 <= agent.col and agent.row < self.size and agent.col < self.size
+            except AssertionError:
+                print("Start position out of bounds.")
+                return
+            self.agents.append(agent)
+            agent.grid = self
         self.update()
 class Agent:
     _id_counter = 0
