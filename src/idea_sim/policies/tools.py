@@ -6,8 +6,9 @@ import numpy as np
 '''
 def utility_score(choice_set,util_mat) -> Tuple[int,List[int,int]]:
     score = 0
-    for row in util_mat:
-        score += max(row[choice_set])
+    for col in range(util_mat.shape[1]):
+        # print(f"util crop: {util_mat[choice_set]}")
+        score += max([util_mat[choice][col] for choice in choice_set])
     return score, choice_set
 
 
