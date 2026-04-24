@@ -1,11 +1,13 @@
+from dataclasses import dataclass
+
 import numpy as np
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 class GridWorld:
     def __init__(self,size):
         self.size = size
         self.grid = np.zeros((size,size))
-        self.agents = []
+        self.agents: List[Agent] = []
 
     def __str__(self):
         grid_string = f"{'\n'.join([' '.join(map(str, row)) for row in self.grid])}\n"
@@ -25,24 +27,45 @@ class GridWorld:
     def init_agent(self, agent_list: List[Agent]):
         for agent in agent_list:
             try:
-                assert 0 <= agent.row and 0 <= agent.col and agent.row < self.size and agent.col < self.size
+                assert 0 <= agent.init_row and 0 <= agent.init_col and agent.init_row < self.size and agent.init_col < self.size
             except AssertionError:
                 print("Start position out of bounds.")
                 return
             self.agents.append(agent)
             agent.grid = self
         self.update()
+    def reset(self):
+        self.grid = np.zeros((self.size,self.size))
+        for agent in self.agents:
+            agent.reset(update_grid=False)
+        self.update()
+
+
 class Agent:
     _id_counter = 0
 
     def __init__(self,init_row, init_col):
         Agent._id_counter += 1
         self.id = Agent._id_counter
-        self.row = init_row
-        self.col = init_col
-        self.path = [(self.row,self.col)]
-        self.grid = None
+        self.init_row = init_row
+        self.init_col = init_col
+        self.path = [(self.init_row,self.init_col)]
+        self.grid: GridWorld = None
 
     def step(self, next: Tuple[int,int]):
         self.path.append(next)
         self.grid.update()
+
+    def reset(self, update_grid=True):
+        self.path = [(self.init_row,self.init_col)]
+        if update_grid:
+            self.grid.update()
+
+@dataclass
+class Model:
+    grid: GridWorld
+    util_mat: np.ndarray
+    agent_path_dict: Dict[int,list[int]]
+    agent_order: List[int]
+    all_paths: List[List[Tuple[int,int]]]
+
