@@ -11,9 +11,12 @@ class GridWorld:
 
     def __str__(self):
         grid_string = f"{'\n'.join([' '.join(map(str, row)) for row in self.grid])}\n"
-        path_string = '\n'+'\n'.join([f"  {agent.id}: {'->'.join(map(str,agent.path))}" for agent in self.agents])
-        return grid_string+"Agent paths: "+path_string
+        return grid_string
     
+    def print_paths(self):
+        path_string = '\n'+'\n'.join([f"  {agent.id}: {'->'.join(map(str,agent.path))}" for agent in self.agents])
+        print(f"Agent paths: {path_string}")
+
     def update(self):
         for agent in self.agents:
             path = agent.path
@@ -34,11 +37,15 @@ class GridWorld:
             self.agents.append(agent)
             agent.grid = self
         self.update()
+
     def reset(self):
         self.grid = np.zeros((self.size,self.size))
         for agent in self.agents:
             agent.reset(update_grid=False)
         self.update()
+
+    def get_score(self):
+        return np.count_nonzero(self.grid)
 
 
 class Agent:
@@ -68,4 +75,5 @@ class Model:
     agent_path_dict: Dict[int,list[int]]
     agent_order: List[int]
     all_paths: List[List[Tuple[int,int]]]
+    chosen_path_ids: List[int] | None = None
 
