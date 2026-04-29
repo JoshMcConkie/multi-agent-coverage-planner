@@ -1,13 +1,17 @@
 from dataclasses import dataclass
 
+from matplotlib import pyplot as plt
 import numpy as np
 from typing import List, Tuple, Dict
 
 class GridWorld:
+    '''Class for path-planning allocation world with discrete points'''
     def __init__(self,size):
         self.size = size
         self.grid = np.zeros((size,size))
         self.agents: List[Agent] = []
+        self.fig = None
+        self.plot_count = 0
 
     def __str__(self):
         grid_string = f"{'\n'.join([' '.join(map(str, row)) for row in self.grid])}\n"
@@ -18,6 +22,7 @@ class GridWorld:
         print(f"Agent paths: {path_string}")
 
     def update(self):
+        '''Update agent current/past positions on grid'''
         for agent in self.agents:
             path = agent.path
             for i,pos in enumerate(path):
@@ -28,6 +33,7 @@ class GridWorld:
                     self.grid[row][col] = -1 * agent.id
                     
     def init_agent(self, agent_list: List[Agent]):
+        '''Attach agent(s) to grid'''
         for agent in agent_list:
             try:
                 assert 0 <= agent.init_row and 0 <= agent.init_col and agent.init_row < self.size and agent.init_col < self.size
@@ -38,7 +44,8 @@ class GridWorld:
             agent.grid = self
         self.update()
 
-    def reset(self):
+    def reset_grid(self):
+        '''Reset agent positions to start and clear grid'''
         self.grid = np.zeros((self.size,self.size))
         for agent in self.agents:
             agent.reset(update_grid=False)
@@ -46,6 +53,43 @@ class GridWorld:
 
     def get_score(self):
         return np.count_nonzero(self.grid)
+    
+    def add_plot(self):
+        if self.fig is None:
+            self.fig = plt.figure()
+            legend_ax = self.fig.add_subplot(2,2,1)
+            legend_ax.axis("off")
+            ax = self.fig.add_subplot(2,2,2+self.plot_count)
+            handles, labels = ax.get_legend_handles_labels()
+            legend_ax.legend(handles, labels, loc="center") 
+        else:
+            ax = self.fig.add_subplot(2,2,2+self.plot_count)
+
+        self.plot_count += 1
+
+        ax.set_xlim(0, self.size)
+        ax.set_ylim(0, self.size)
+        ax.set_aspect("equal")
+        ax.invert_yaxis()
+
+        for agent in self.agents:
+            x = []
+            y = []
+
+            for row, col in agent.path:
+                x.append(col)
+                y.append(row)
+
+            ax.plot(x, y, "o-", label=f"Agent {agent.id}")
+
+        # ax.legend()
+        
+    
+    def show_plots(self):
+        # plt.legend()
+        plt.show()
+
+
 
 
 class Agent:
@@ -76,4 +120,15 @@ class Model:
     agent_order: List[int]
     all_paths: List[List[Tuple[int,int]]]
     chosen_path_ids: List[int] | None = None
+
+@dataclass(frozen=True)
+class Result:
+    final_grid_array: np.ndarray
+    paths_by_agent: Dict[int,List[int,int]]
+    score: int
+    method: function
+    runtime: any
+    chosen_path_ids: List[int]
+    metadata: any
+
 
