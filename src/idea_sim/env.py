@@ -130,5 +130,6 @@ class Result:
     runtime: any
     chosen_path_ids: List[int]
     metadata: any
+    agent_order: List[int]
 
 
