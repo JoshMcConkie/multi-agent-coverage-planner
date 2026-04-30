@@ -1,3 +1,4 @@
+import time
 from typing import List, Tuple
 from itertools import permutations
 from tqdm import tqdm
@@ -14,16 +15,20 @@ def step_cen_solve(model, agent_order):
 
 
 def best_seq_greedy_solve(model: Model) -> Tuple[int,List[int]]:
+    start_time = time.perf_counter()
     agent_perm = permutations(model.agent_path_dict.keys())
     solutions = []
-    print("Centralized Solver Progress: ")
+    print("\"Best\" Sequential Solver Progress: ")
     for agent_order in tqdm(agent_perm):
         solutions.append(step_cen_solve(model, agent_order))
 
     score,path_ids,agent_order = max(solutions)
     paths_by_agent = update_agents(model,path_ids)
-    return Result(model.grid.grid,paths_by_agent,
+    end_time = time.perf_counter()
+    result = Result(model.grid.grid,paths_by_agent,
                   score,best_seq_greedy_solve,
-                  runtime=None,chosen_path_ids=path_ids,
-                  metadata=None,agent_order=agent_order)
+                  runtime=end_time-start_time,chosen_path_ids=path_ids,
+                  metadata=None,agent_order=agent_order, steps=model.steps)
+    model.grid.reset_grid()
+    return result
         
