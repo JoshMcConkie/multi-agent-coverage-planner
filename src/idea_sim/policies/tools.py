@@ -99,4 +99,4 @@ def path_model(grid: GridWorld,objective: Objective, steps: int, agent_order=Non
         i += len(solutions)
     util_mat = objective.build_util_matrix(all_paths,coordinates) # rows: path idx, cols: coord idx
     
-    return Model(grid,util_mat,agent_path_dict,agent_order,all_paths)    
+    return Model(grid,objective,util_mat,agent_path_dict,agent_order,all_paths, steps)    
