@@ -1,8 +1,9 @@
 from dataclasses import dataclass
-
+import pandas as pd
 from matplotlib import pyplot as plt
 import numpy as np
 from typing import List, Tuple, Dict
+from idea_sim.objective import Objective
 
 class GridWorld:
     '''Class for path-planning allocation world with discrete points'''
@@ -112,24 +113,76 @@ class Agent:
         if update_grid:
             self.grid.update()
 
-@dataclass
+@dataclass(frozen=True)
 class Model:
     grid: GridWorld
+    objective: Objective
     util_mat: np.ndarray
     agent_path_dict: Dict[int,list[int]]
     agent_order: List[int]
     all_paths: List[List[Tuple[int,int]]]
-    chosen_path_ids: List[int] | None = None
+    steps: int
 
 @dataclass(frozen=True)
 class Result:
     final_grid_array: np.ndarray
-    paths_by_agent: Dict[int,List[int,int]]
+    paths_by_agent: Dict[int,List[Tuple[int,int]]]
     score: int
-    method: function
+    method: callable
     runtime: any
     chosen_path_ids: List[int]
-    metadata: any
+    metadata: Dict
     agent_order: List[int]
+    steps: int
 
+    def get_rows(self):
+        method_name = (
+            self.method.__name__ if callable(self.method)
+            else str(self.method)
+        )
+        rows = [
+            ("Method", method_name),
+            ("Score", self.score),
+            ("Runtime", self.runtime),
+            # ("Agent Order", self.agent_order),
+            ("Steps", self.steps),
+            ("Metadata", self.metadata)
+        ]
+        return rows
+    
+    def summary_dict(self)->dict:
+        return {
+            "method": self.method.__name__ if callable(self.method) else str(self.method),
+            "score": self.score,
+            "runtime": self.runtime,
+            "num_agents": len(self.chosen_path_ids)
+        }
 
+    def __str__(self):
+        rows = self.get_rows()
+        
+        left_width = max(len(str(label)) for label, _ in rows)
+        right_width = max(len(str(value)) for _, value in rows)
+
+        line = f"+-{'-' * left_width}-+-{'-' * right_width}-+"
+
+        table = [line]
+        for label, value in rows:
+            table.append(
+                f"| {str(label).ljust(left_width)} | {str(value).ljust(right_width)} |"
+            )
+        table.append(line)
+
+        return "\n".join(table)
+
+@dataclass
+class CompareResults:
+    results: List[Result]
+    def summary(self):
+        pass
+
+    def to_dataframe(self):
+        return pd.DataFrame([r.summary_dict() for r in self.results])
+
+    def __str__(self):
+        pass
