@@ -1,4 +1,5 @@
 # Given full preset paths with known utility
+import time
 from typing import List, Tuple
 
 import numpy as np
@@ -30,31 +31,40 @@ def seq_greedy_solve(model: Model) -> Result:
     returns:
         score: an integer, sequentially maximized objective/utility score.
     '''
+    start_time = time.perf_counter()
     # print(model.util_mat)
     # print(model.agent_path_dict)
     # print(model.agent_order)
 
     score, path_ids, paths_by_agent = choose_seq_paths(model)
-    return Result(model.grid.grid,paths_by_agent,
+    end_time = time.perf_counter()
+    result = Result(model.grid.grid,paths_by_agent,
                   score,seq_greedy_solve,
-                  runtime=None,chosen_path_ids=path_ids,
-                  metadata=None,agent_order=model.agent_order)
+                  runtime=end_time-start_time,chosen_path_ids=path_ids,
+                  metadata=None,agent_order=model.agent_order,steps=model.steps)
+    model.grid.reset_grid()
+    return result
 
 
-def split_seq_solve(grid: GridWorld,objective: type[Objective], 
-                    steps: int, agent_order, chunksize: int) -> Result:
-    
-    rounds = [chunksize for s in range(steps // chunksize)] + [steps % chunksize]
+def split_seq_solve(model: Model, chunksize: int) -> Result:
+    start_time = time.perf_counter()
+    full_rounds, remainder = divmod(model.steps,chunksize)
+    rounds = [chunksize] * full_rounds
+    if remainder:
+        rounds.append(remainder)
     prior_coverage_state = None
     for chunk in rounds:
-        round_model = path_model(grid, objective, chunk, agent_order)
+        round_model = path_model(model.grid, model.objective,chunk, model.agent_order)
         score, path_ids, paths_by_agent = choose_seq_paths(round_model,prior_coverage_state)
         if prior_coverage_state is None:
             prior_coverage_state = np.zeros(round_model.util_mat.shape[1])
         prior_coverage_state += round_model.util_mat[path_ids].max(axis=0)
-
+    end_time = time.perf_counter()
     # print(f"Score: {score}")
-    return Result(grid.grid,paths_by_agent,
-                  grid.get_score(),seq_greedy_solve,
-                  runtime=None,chosen_path_ids=path_ids,
-                  metadata=None, agent_order=agent_order)
+    result = Result(model.grid.grid,paths_by_agent,
+                  model.grid.get_score(),split_seq_solve,
+                  runtime=end_time-start_time,chosen_path_ids=path_ids,
+                  metadata={"Round-steps":rounds}, 
+                  agent_order=model.agent_order,steps=model.steps,)
+    model.grid.reset_grid()
+    return result
