@@ -18,8 +18,8 @@ def best_seq_greedy_solve(model: Model) -> Tuple[int,List[int]]:
     start_time = time.perf_counter()
     agent_perm = permutations(model.agent_path_dict.keys())
     solutions = []
-    print("\"Best\" Sequential Solver Progress: ")
-    for agent_order in tqdm(agent_perm):
+    # print("\"Best\" Sequential Solver...")
+    for agent_order in agent_perm:
         solutions.append(step_cen_solve(model, agent_order))
 
     score,path_ids,agent_order = max(solutions)
@@ -31,4 +31,3 @@ def best_seq_greedy_solve(model: Model) -> Tuple[int,List[int]]:
                   metadata=None,agent_order=agent_order, steps=model.steps)
     model.grid.reset_grid()
     return result
-        
