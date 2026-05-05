@@ -5,6 +5,7 @@ import numpy as np
 from typing import List, Tuple, Dict
 from idea_sim.objective import Objective
 
+
 class GridWorld:
     '''Class for path-planning allocation world with discrete points'''
     def __init__(self,size):
@@ -155,7 +156,7 @@ class Result:
             "method": self.method.__name__ if callable(self.method) else str(self.method),
             "score": self.score,
             "runtime": self.runtime,
-            "num_agents": len(self.chosen_path_ids)
+            "num_agents": len(self.agent_order)
         }
 
     def __str__(self):
@@ -174,15 +175,3 @@ class Result:
         table.append(line)
 
         return "\n".join(table)
-
-@dataclass
-class CompareResults:
-    results: List[Result]
-    def summary(self):
-        pass
-
-    def to_dataframe(self):
-        return pd.DataFrame([r.summary_dict() for r in self.results])
-
-    def __str__(self):
-        pass
