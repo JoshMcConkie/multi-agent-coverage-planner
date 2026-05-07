@@ -1,7 +1,6 @@
 import time
 from typing import List, Tuple
 from itertools import permutations
-from tqdm import tqdm
 from idea_sim.env import Model, Result
 from idea_sim.policies.tools import update_agents,best_greedy_choice
 
@@ -14,7 +13,7 @@ def step_cen_solve(model, agent_order):
     return score, path_ids, agent_order
 
 
-def best_seq_greedy_solve(model: Model) -> Tuple[int,List[int]]:
+def best_seq_greedy_solve(model: Model) -> Result:
     start_time = time.perf_counter()
     agent_perm = permutations(model.agent_path_dict.keys())
     solutions = []

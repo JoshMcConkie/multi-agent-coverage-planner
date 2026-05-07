@@ -2,7 +2,6 @@ from itertools import product
 from operator import add
 from typing import List, Tuple, Dict
 
-import numpy as np
 from idea_sim.objective import Objective
 from idea_sim.env import GridWorld, Model
 
