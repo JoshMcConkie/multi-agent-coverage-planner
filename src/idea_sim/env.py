@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-import pandas as pd
 from matplotlib import pyplot as plt
 import numpy as np
 from typing import List, Tuple, Dict
@@ -125,6 +124,11 @@ class Model:
     steps: int
 
 @dataclass(frozen=True)
+class EmptyResult:
+    def summary_dict(self)->dict:
+        return dict()
+
+@dataclass(frozen=True)
 class Result:
     final_grid_array: np.ndarray
     paths_by_agent: Dict[int,List[Tuple[int,int]]]
@@ -175,3 +179,4 @@ class Result:
         table.append(line)
 
         return "\n".join(table)
+

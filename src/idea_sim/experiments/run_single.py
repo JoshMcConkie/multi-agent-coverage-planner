@@ -1,4 +1,4 @@
-from idea_sim.env import GridWorld, Agent, Result
+from idea_sim.env import GridWorld, Result, EmptyResult
 
 from idea_sim.objective import Coverage
 from idea_sim.policies.tools import path_model
@@ -6,13 +6,16 @@ from idea_sim.policies.centralized import best_seq_greedy_solve
 from idea_sim.policies.sequential import seq_greedy_solve, split_seq_solve
 
 def run_single_compare(agents: list, agent_order,size: int, 
-                       steps: int, chunksize: int)->list[Result]:
+                       steps: int, chunksize: int, run_optimal: bool = True)->list[Result | EmptyResult]:
     grid = GridWorld(size)
     grid.init_agent(agents)
     model = path_model(grid,Coverage,steps,agent_order)
     seq_result = seq_greedy_solve(model)
     split_result = split_seq_solve(model, chunksize)
-    best_seq_result = best_seq_greedy_solve(model)
+    if run_optimal:
+        best_seq_result = best_seq_greedy_solve(model)
+    else:
+        best_seq_result = EmptyResult()
     return [seq_result,split_result,best_seq_result]
 '''
 STEPS = 6
