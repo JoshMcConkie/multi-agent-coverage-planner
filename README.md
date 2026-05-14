@@ -1,4 +1,11 @@
-Topic: Submodular Set Maximization/Path Planning
+# multi-agent-coverage-planner
+
+A benchmark for **rolling-horizon coverage** path planning on a multi-agent grid. Agents
+are allocated paths to maximize joint grid coverage under a submodular objective; the
+package compares full-horizon sequential greedy against a chunked rolling-horizon variant
+(and an optional exhaustive baseline) across configurable sweeps of grid size, agent
+count, and planning horizon. Per-run results are persisted to SQLite and visualized as
+heatmaps or score-vs-runtime scatters from a single CLI.
 
 ## Problem Structure
 
@@ -95,7 +102,7 @@ persists both:
 into `results/sweeps.db` (SQLite).
 
 ```bash
-uv run python -m idea_sim.experiments.run_sweep
+uv run python -m coverage_planner.experiments.run_sweep
 ```
 
 The sweep prints the new `sweep_id` on completion. Each invocation appends a new
@@ -103,7 +110,7 @@ sweep; old sweeps remain queryable.
 
 To change the sweep range or whether the optimal baseline is solved, edit the
 constants near the top of
-[`src/idea_sim/experiments/run_sweep.py`](src/idea_sim/experiments/run_sweep.py):
+[`src/coverage_planner/experiments/run_sweep.py`](src/coverage_planner/experiments/run_sweep.py):
 
 ```python
 num_agents = 7
@@ -118,11 +125,11 @@ writes PNGs into `results/<name>/grid_NxN/`.
 
 ```bash
 # Per-agent split-vs-greedy heatmaps (score min/mean, runtime max/mean):
-uv run python -m idea_sim.experiments.plot_sweep heatmap
+uv run python -m coverage_planner.experiments.plot_sweep heatmap
 
 # Score-vs-runtime scatter of each method against seq_greedy_solve:
-uv run python -m idea_sim.experiments.plot_sweep scatter --series-by method
-uv run python -m idea_sim.experiments.plot_sweep scatter --series-by chunksize
+uv run python -m coverage_planner.experiments.plot_sweep scatter --series-by method
+uv run python -m coverage_planner.experiments.plot_sweep scatter --series-by chunksize
 ```
 
 Useful flags:
@@ -139,7 +146,7 @@ For ad-hoc analysis (e.g. in a notebook), the storage helpers return DataFrames
 directly:
 
 ```python
-from idea_sim.experiments import storage
+from coverage_planner.experiments import storage
 
 with storage.connect() as conn:
     sweep_id, meta, agg_df = storage.load_sweep_df(conn, name="same_start")
