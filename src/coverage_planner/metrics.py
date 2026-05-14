@@ -4,8 +4,8 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from idea_sim.env import Result
-from idea_sim.policies.centralized import best_seq_greedy_solve
+from coverage_planner.env import Result
+from coverage_planner.policies.centralized import best_seq_greedy_solve
 
 
 @dataclass

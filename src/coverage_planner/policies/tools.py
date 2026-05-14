@@ -2,8 +2,8 @@ from itertools import product
 from operator import add
 
 
-from idea_sim.objective import Objective
-from idea_sim.env import GridWorld, Model
+from coverage_planner.objective import Objective
+from coverage_planner.env import GridWorld, Model
 
 
 def utility_score(choice_set,util_mat, prior_util_row=None) -> tuple[int,list[int]]:

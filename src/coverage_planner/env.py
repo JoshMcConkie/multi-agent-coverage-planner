@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from matplotlib import pyplot as plt
 import numpy as np
 
-from idea_sim.objective import Objective
+from coverage_planner.objective import Objective
 
 
 class GridWorld:

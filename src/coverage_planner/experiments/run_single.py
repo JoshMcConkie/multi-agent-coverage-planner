@@ -1,9 +1,9 @@
-from idea_sim.env import GridWorld, Result, EmptyResult
+from coverage_planner.env import GridWorld, Result, EmptyResult
 
-from idea_sim.objective import Coverage
-from idea_sim.policies.tools import path_model
-from idea_sim.policies.centralized import best_seq_greedy_solve
-from idea_sim.policies.sequential import seq_greedy_solve, split_seq_solve
+from coverage_planner.objective import Coverage
+from coverage_planner.policies.tools import path_model
+from coverage_planner.policies.centralized import best_seq_greedy_solve
+from coverage_planner.policies.sequential import seq_greedy_solve, split_seq_solve
 
 def run_single_compare(agents: list, agent_order,size: int, 
                        steps: int, chunksize: int, run_optimal: bool = True)->list[Result | EmptyResult]:

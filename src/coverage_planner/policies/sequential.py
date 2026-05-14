@@ -2,8 +2,8 @@
 import time
 
 import numpy as np
-from idea_sim.policies.tools import best_greedy_choice, path_model, update_agents
-from idea_sim.env import Model, Result
+from coverage_planner.policies.tools import best_greedy_choice, path_model, update_agents
+from coverage_planner.env import Model, Result
 
 def choose_seq_paths(model, prior_util_row=None):
     if model.agent_order is None:

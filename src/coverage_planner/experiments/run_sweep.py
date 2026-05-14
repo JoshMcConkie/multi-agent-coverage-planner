@@ -1,8 +1,8 @@
-from idea_sim.env import Agent, EmptyResult
-from idea_sim.experiments import storage
-from idea_sim.experiments.run_single import run_single_compare
-from idea_sim.metrics import CompareSweep
-from idea_sim.policies.sequential import seq_greedy_solve, split_seq_solve
+from coverage_planner.env import Agent, EmptyResult
+from coverage_planner.experiments import storage
+from coverage_planner.experiments.run_single import run_single_compare
+from coverage_planner.metrics import CompareSweep
+from coverage_planner.policies.sequential import seq_greedy_solve, split_seq_solve
 
 from tqdm.auto import tqdm
 

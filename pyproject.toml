@@ -1,7 +1,7 @@
 [project]
-name = "idea-sim"
+name = "coverage-planner"
 version = "0.1.0"
-description = "Add your description here"
+description = "Multi-agent rolling-horizon coverage path-planning benchmark."
 readme = "README.md"
 authors = [
     { name = "Josh McConkie", email = "bjmcconk@byu.edu" }
@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-idea-sim = "idea_sim:main"
+coverage-planner = "coverage_planner:main"
 
 [build-system]
 requires = ["uv_build>=0.11.3,<0.12.0"]

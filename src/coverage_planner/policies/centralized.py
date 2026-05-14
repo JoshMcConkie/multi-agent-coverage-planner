@@ -1,8 +1,8 @@
 import time
 
 from itertools import permutations
-from idea_sim.env import Model, Result
-from idea_sim.policies.tools import update_agents,best_greedy_choice
+from coverage_planner.env import Model, Result
+from coverage_planner.policies.tools import update_agents,best_greedy_choice
 
 def step_cen_solve(model, agent_order):
     path_ids: list[int] = []

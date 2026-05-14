@@ -1,9 +1,9 @@
 """CLI dispatcher for rendering plots from a persisted sweep.
 
 Examples:
-    python -m idea_sim.experiments.plot_sweep heatmap
-    python -m idea_sim.experiments.plot_sweep scatter --series-by method
-    python -m idea_sim.experiments.plot_sweep scatter --series-by chunksize \\
+    python -m coverage_planner.experiments.plot_sweep heatmap
+    python -m coverage_planner.experiments.plot_sweep scatter --series-by method
+    python -m coverage_planner.experiments.plot_sweep scatter --series-by chunksize \\
         --sweep-id 3
 """
 
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import argparse
 
-from idea_sim.experiments import plotting, storage
+from coverage_planner.experiments import plotting, storage
 
 
 def main() -> None:
