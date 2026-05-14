@@ -4,7 +4,7 @@ We have $K$ agents on a square grid. The goal is the maximize the total coverage
 - A set path length for each agent
 - The grid is comprised of discrete integer coordinates
 - Each coordinate is worth 1 point, with overlapping providing no extra benefit
->[!info] Scope
+>[!note] Scope
 >Currently, we only consider the case where all agents share the same initial position.
 ### Objective
 We seek paths such that the coverage of the grid is maximized. More explicitly, we follow an expansion of Nemhauser et al.'s submodular set maximization problem.
@@ -47,4 +47,75 @@ In each round $r$, the starting position of $\text{agent}_k$ will be the final p
 - Not randomized direction-filtering order
 - grid size/agent constraints
 - Only considering single point start
+
+## Usage
+
+### Install
+Dependencies are managed with `uv` and pinned in `pyproject.toml` / `uv.lock`.
+```bash
+uv sync
+```
+
+### Run a sweep
+`run_sweep.py` iterates over `(steps, agents, chunksize)` for the same-start
+configuration, computes the comparison summaries via `CompareSweep`, and
+persists both:
+
+- per-cell aggregate ratios → `sweep_rows`
+- per-method, per-start-cell raw `(score, runtime)` → `sweep_results`
+
+into `results/sweeps.db` (SQLite).
+
+```bash
+uv run python -m idea_sim.experiments.run_sweep
+```
+
+The sweep prints the new `sweep_id` on completion. Each invocation appends a new
+sweep; old sweeps remain queryable.
+
+To change the sweep range or whether the optimal baseline is solved, edit the
+constants near the top of
+[`src/idea_sim/experiments/run_sweep.py`](src/idea_sim/experiments/run_sweep.py):
+
+```python
+num_agents = 7
+max_size = 8
+SOLVE_OPTIMAL = False
+SWEEP_NAME = "same_start"
+```
+
+### Render plots
+Plots are produced by a small CLI that loads a persisted sweep from the DB and
+writes PNGs into `results/<name>/grid_NxN/`.
+
+```bash
+# Per-agent split-vs-greedy heatmaps (score min/mean, runtime max/mean):
+uv run python -m idea_sim.experiments.plot_sweep heatmap
+
+# Score-vs-runtime scatter of each method against seq_greedy_solve:
+uv run python -m idea_sim.experiments.plot_sweep scatter --series-by method
+uv run python -m idea_sim.experiments.plot_sweep scatter --series-by chunksize
+```
+
+Useful flags:
+
+- `--sweep-id N` — plot a specific sweep instead of the latest.
+- `--name NAME` — pick the latest sweep with this name (default: `same_start`).
+- `--series-by {method,chunksize,agents,steps}` — color dimension for scatter
+  plots.
+- `--reference-method NAME` — denominator for the scatter ratios (default:
+  `seq_greedy_solve`).
+
+### Programmatic access
+For ad-hoc analysis (e.g. in a notebook), the storage helpers return DataFrames
+directly:
+
+```python
+from idea_sim.experiments import storage
+
+with storage.connect() as conn:
+    sweep_id, meta, agg_df = storage.load_sweep_df(conn, name="same_start")
+    _, _, raw_df = storage.load_sweep_raw_df(conn, sweep_id=sweep_id)
+    history = storage.list_sweeps(conn)
+```
 
