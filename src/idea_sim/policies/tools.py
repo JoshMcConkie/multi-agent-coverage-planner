@@ -1,12 +1,12 @@
 from itertools import product
 from operator import add
-from typing import List, Tuple, Dict
+
 
 from idea_sim.objective import Objective
 from idea_sim.env import GridWorld, Model
 
 
-def utility_score(choice_set,util_mat, prior_util_row=None) -> Tuple[int,List[int,int]]:
+def utility_score(choice_set,util_mat, prior_util_row=None) -> tuple[int,list[int]]:
     '''Return utility score for given choice set of a utility matrix.
     This assumes submodularity such that double coverage offers no 
     bonus to utility.
@@ -24,7 +24,7 @@ def utility_score(choice_set,util_mat, prior_util_row=None) -> Tuple[int,List[in
     return score, choice_set[:n_choices]
 
 
-def best_greedy_choice(options: List[int],choice_hist: List[int],util_mat, prior_util_row=None)-> Tuple[int,List[int]]:
+def best_greedy_choice(options: list[int],choice_hist: list[int],util_mat, prior_util_row=None)-> tuple[int,list[int]]:
     '''Get next choice with greatest marginal utility.
 
     Args: 
@@ -37,7 +37,7 @@ def best_greedy_choice(options: List[int],choice_hist: List[int],util_mat, prior
 
 
 def get_all_paths(grid: GridWorld,steps: int,
-                  start_row: Tuple[int,int],start_col:Tuple[int,int]) -> List[List[Tuple[int,int]]]:
+                  start_row: tuple[int,int],start_col:tuple[int,int]) -> list[list[tuple[int,int]]]:
     """Generate all possible path for an agent in the grid.
 
         #TODO: Avoid other agents starting positions.
@@ -68,7 +68,7 @@ def get_all_paths(grid: GridWorld,steps: int,
     step(steps,[(start_row,start_col)])
     return paths
 
-def update_agents(model: Model,path_ids: List[int])-> Dict[int,List[int,int]]:
+def update_agents(model: Model,path_ids: list[int])-> dict[int,list[int,int]]:
     '''Append the chosen paths to the agents in the grid.
     '''
     paths_by_agent = dict()

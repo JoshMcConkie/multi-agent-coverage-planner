@@ -1,11 +1,11 @@
 import time
-from typing import List, Tuple
+
 from itertools import permutations
 from idea_sim.env import Model, Result
 from idea_sim.policies.tools import update_agents,best_greedy_choice
 
 def step_cen_solve(model, agent_order):
-    path_ids: List[int] = []
+    path_ids: list[int] = []
     for agent in agent_order:
         score, path_ids = best_greedy_choice(model.agent_path_dict[agent],
                                                 path_ids,

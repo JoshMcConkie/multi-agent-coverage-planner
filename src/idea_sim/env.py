@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from matplotlib import pyplot as plt
 import numpy as np
-from typing import List, Tuple, Dict
+
 from idea_sim.objective import Objective
 
 
@@ -10,7 +10,7 @@ class GridWorld:
     def __init__(self,size):
         self.size = size
         self.grid = np.zeros((size,size))
-        self.agents: List[Agent] = []
+        self.agents: list[Agent] = []
         self.fig = None
         self.plot_count = 0
 
@@ -33,7 +33,7 @@ class GridWorld:
                 else:
                     self.grid[row][col] = -1 * agent.id
                     
-    def init_agent(self, agent_list: List[Agent]):
+    def init_agent(self, agent_list: list[Agent]):
         '''Attach agent(s) to grid'''
         for agent in agent_list:
             try:
@@ -104,7 +104,7 @@ class Agent:
         self.path = [(self.init_row,self.init_col)]
         self.grid: GridWorld = None
 
-    def step(self, next: Tuple[int,int]):
+    def step(self, next: tuple[int,int]):
         self.path.append(next)
         self.grid.update()
 
@@ -118,9 +118,9 @@ class Model:
     grid: GridWorld
     objective: Objective
     util_mat: np.ndarray
-    agent_path_dict: Dict[int,list[int]]
-    agent_order: List[int]
-    all_paths: List[List[Tuple[int,int]]]
+    agent_path_dict: dict[int,list[int]]
+    agent_order: list[int]
+    all_paths: list[list[tuple[int,int]]]
     steps: int
 
 @dataclass(frozen=True)
@@ -131,13 +131,13 @@ class EmptyResult:
 @dataclass(frozen=True)
 class Result:
     final_grid_array: np.ndarray
-    paths_by_agent: Dict[int,List[Tuple[int,int]]]
+    paths_by_agent: dict[int,list[tuple[int,int]]]
     score: int
     method: callable
     runtime: any
-    chosen_path_ids: List[int]
-    metadata: Dict
-    agent_order: List[int]
+    chosen_path_ids: list[int]
+    metadata: dict
+    agent_order: list[int]
     steps: int
 
     def get_rows(self):

@@ -1,6 +1,6 @@
 
 from dataclasses import dataclass
-from typing import List
+
 
 import pandas as pd
 
@@ -10,7 +10,7 @@ from idea_sim.policies.centralized import best_seq_greedy_solve
 
 @dataclass
 class CompareResults:
-    results: List[Result]
+    results: list[Result]
     def summary(self):
         pass
 
@@ -23,7 +23,7 @@ class CompareResults:
 
 @dataclass
 class CompareSweep:
-    results: List[Result]
+    results: list[Result]
 
     def summary(
         self,
