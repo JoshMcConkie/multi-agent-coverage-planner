@@ -99,14 +99,18 @@ persists both:
 - per-cell aggregate ratios → `sweep_rows`
 - per-method, per-start-cell raw `(score, runtime)` → `sweep_results`
 
-into `results/sweeps.db` (SQLite).
+into `results/sweeps.db` (SQLite). `storage.connect()` resolves that path from
+the repository root (the directory containing `pyproject.toml`), not the
+process working directory, so notebooks, CLIs, and `run_sweep.py` all use the
+same file regardless of where they are launched.
 
 ```bash
 uv run python -m coverage_planner.experiments.run_sweep
 ```
 
 The sweep prints the new `sweep_id` on completion. Each invocation appends a new
-sweep; old sweeps remain queryable.
+sweep; old sweeps remain queryable. Pass a different relative or absolute path to
+`storage.connect(...)` to read or write another database file under `results/`.
 
 To change the sweep range or whether the optimal baseline is solved, edit the
 constants near the top of
@@ -143,7 +147,9 @@ Useful flags:
 
 ### Programmatic access
 For ad-hoc analysis (e.g. in a notebook), the storage helpers return DataFrames
-directly:
+directly. `storage.connect()` defaults to `results/sweeps.db` and resolves
+relative paths from the project root, so you do not need to `chdir` or build
+paths from `Path.cwd()` when the notebook kernel starts in `notebooks/`:
 
 ```python
 from coverage_planner.experiments import storage
@@ -152,5 +158,13 @@ with storage.connect() as conn:
     sweep_id, meta, agg_df = storage.load_sweep_df(conn, name="same_start")
     _, _, raw_df = storage.load_sweep_raw_df(conn, sweep_id=sweep_id)
     history = storage.list_sweeps(conn)
+
+# Alternate database (also resolved from the project root):
+with storage.connect("results/same_start/sweeps.db") as conn:
+    sweep_id, meta, agg_df = storage.load_sweep_df(conn, name="same_start")
 ```
+
+`connect()` opens (and creates parent directories for) the database file but
+does not create tables; run a sweep or call `storage.init_schema(conn)` before
+querying. Sweeps are selected by `name` (latest match) or explicit `sweep_id`.
 
