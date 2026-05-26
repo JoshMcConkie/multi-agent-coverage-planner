@@ -15,6 +15,30 @@ import pandas as pd
 
 DEFAULT_DB_PATH = Path("results/sweeps.db")
 
+_PROJECT_ROOT: Path | None = None
+
+
+def _project_root() -> Path:
+    """Return the repository root (directory containing ``pyproject.toml``)."""
+    global _PROJECT_ROOT
+    if _PROJECT_ROOT is not None:
+        return _PROJECT_ROOT
+
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "pyproject.toml").is_file():
+            _PROJECT_ROOT = parent
+            return _PROJECT_ROOT
+
+    _PROJECT_ROOT = Path.cwd()
+    return _PROJECT_ROOT
+
+
+def _resolve_db_path(db_path: Path) -> Path:
+    """Resolve *db_path* relative to the project root when not absolute."""
+    if db_path.is_absolute():
+        return db_path
+    return _project_root() / db_path
+
 
 SWEEP_ROW_COLUMNS: tuple[str, ...] = (
     "agents",
@@ -94,8 +118,13 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
 
 
 def connect(db_path: Path | str = DEFAULT_DB_PATH) -> sqlite3.Connection:
-    """Open a SQLite connection, creating parent directories as needed."""
-    db_path = Path(db_path)
+    """Open a SQLite connection, creating parent directories as needed.
+
+    Relative *db_path* values are resolved from the project root (the
+    directory containing ``pyproject.toml``), not the process cwd, so
+    notebooks and CLI entrypoints share the same database file.
+    """
+    db_path = _resolve_db_path(Path(db_path))
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA foreign_keys = ON")
