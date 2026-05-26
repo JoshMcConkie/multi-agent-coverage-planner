@@ -5,6 +5,10 @@ Two top-level entry points:
     - render_scatter(raw_df, meta, ...)       -> score-vs-runtime scatter
                                                  of methods relative to a
                                                  reference method.
+    - render_efficiency_lines(raw_df, meta, ...)
+                                               -> score/runtime ratio lines
+                                                  relative to a reference
+                                                  method.
 """
 
 from __future__ import annotations
@@ -23,6 +27,8 @@ SCATTER_SERIES_COLUMNS: tuple[str, ...] = (
     "agents",
     "steps",
 )
+
+PLOT_DIMENSION_COLUMNS = SCATTER_SERIES_COLUMNS
 
 
 def centered_ratio_norm(series_list, center=1.0, min_dev=0.05):
@@ -296,6 +302,16 @@ def _apply_filters(df: pd.DataFrame, filters: dict | None) -> pd.DataFrame:
     return df[mask]
 
 
+def _split_method_filter(filters: dict | None) -> tuple[dict | None, str | None]:
+    if not filters or "method" not in filters:
+        return filters, None
+
+    non_method_filters = {
+        key: value for key, value in filters.items() if key != "method"
+    }
+    return non_method_filters or None, filters["method"]
+
+
 def _ratio_axis_bounds(values: np.ndarray, *, max_factor: float = 10.0) -> tuple[float, float]:
     """Symmetric log bounds around 1.0, clipped to [1/max_factor, max_factor]."""
     finite = values[np.isfinite(values) & (values > 0)]
@@ -306,6 +322,206 @@ def _ratio_axis_bounds(values: np.ndarray, *, max_factor: float = 10.0) -> tuple
     log_dev = min(log_dev, np.log(max_factor))
     factor = float(np.exp(log_dev)) if log_dev > 0 else 1.05
     return (1.0 / factor, factor)
+
+
+def _sorted_unique(series: pd.Series) -> list:
+    values = list(series.dropna().unique())
+    if pd.api.types.is_numeric_dtype(series):
+        return sorted(values)
+    return sorted(values, key=lambda v: str(v))
+
+
+def _efficiency_ratios(
+    raw_df: pd.DataFrame,
+    *,
+    x_axis: str = "agents",
+    series_by: str = "method",
+    reference_method: str = "seq_greedy_solve",
+    filters: dict | None = None,
+) -> pd.DataFrame:
+    if x_axis not in PLOT_DIMENSION_COLUMNS:
+        raise ValueError(
+            f"x_axis={x_axis!r} not supported. "
+            f"Choose one of {PLOT_DIMENSION_COLUMNS}."
+        )
+    if series_by not in PLOT_DIMENSION_COLUMNS:
+        raise ValueError(
+            f"series_by={series_by!r} not supported. "
+            f"Choose one of {PLOT_DIMENSION_COLUMNS}."
+        )
+    if x_axis == series_by:
+        raise ValueError("x_axis and series_by must be different.")
+    if raw_df.empty:
+        raise ValueError("raw_df is empty; nothing to plot.")
+
+    non_method_filters, method_filter = _split_method_filter(filters)
+    df = _apply_filters(raw_df, non_method_filters).copy()
+    if df.empty:
+        raise ValueError(f"No rows left after applying filters={filters!r}.")
+
+    methods_present = set(df["method"].unique())
+    if reference_method not in methods_present:
+        raise ValueError(
+            f"reference_method={reference_method!r} not found in raw data. "
+            f"Available methods: {sorted(methods_present)}"
+        )
+
+    df = df[
+        np.isfinite(df["score"])
+        & np.isfinite(df["runtime"])
+        & (df["score"] > 0)
+        & (df["runtime"] > 0)
+    ].copy()
+
+    join_keys = ["agents", "steps", "chunksize", "start_row", "start_col"]
+    reference = (
+        df[df["method"] == reference_method]
+        .rename(columns={"score": "ref_score", "runtime": "ref_runtime"})
+        [join_keys + ["ref_score", "ref_runtime"]]
+    )
+
+    merged = df.merge(reference, on=join_keys, how="inner")
+    if method_filter is not None:
+        merged = merged[merged["method"] == method_filter].copy()
+
+    merged["efficiency_ratio"] = (
+        (merged["score"] / merged["runtime"])
+        / (merged["ref_score"] / merged["ref_runtime"])
+    )
+
+    merged = merged[
+        np.isfinite(merged["efficiency_ratio"])
+        & (merged["efficiency_ratio"] > 0)
+    ].copy()
+
+    if merged.empty:
+        raise ValueError(
+            "No finite, positive efficiency ratios left to plot (check for "
+            "zero or missing scores/runtimes in the plotted or reference "
+            "method rows)."
+        )
+
+    return merged
+
+
+def _efficiency_summary(
+    raw_df: pd.DataFrame,
+    *,
+    x_axis: str = "agents",
+    series_by: str = "method",
+    reference_method: str = "seq_greedy_solve",
+    filters: dict | None = None,
+) -> pd.DataFrame:
+    ratios = _efficiency_ratios(
+        raw_df,
+        x_axis=x_axis,
+        series_by=series_by,
+        reference_method=reference_method,
+        filters=filters,
+    )
+
+    summary = (
+        ratios.groupby([series_by, x_axis])["efficiency_ratio"]
+        .agg(["mean", "min", "max"])
+        .reset_index()
+    )
+    return summary
+
+
+def render_efficiency_lines(
+    raw_df: pd.DataFrame,
+    meta: dict,
+    *,
+    x_axis: str = "agents",
+    series_by: str = "method",
+    reference_method: str = "seq_greedy_solve",
+    output_root: Path = Path("results"),
+    filters: dict | None = None,
+) -> Path:
+    """Render normalized score/runtime efficiency lines across sweep axes."""
+    summary = _efficiency_summary(
+        raw_df,
+        x_axis=x_axis,
+        series_by=series_by,
+        reference_method=reference_method,
+        filters=filters,
+    )
+
+    fig, ax = plt.subplots(figsize=(8, 5.5))
+    cmap = plt.get_cmap("tab10")
+
+    x_values = _sorted_unique(summary[x_axis])
+    series_values = _sorted_unique(summary[series_by])
+    x_is_numeric = pd.api.types.is_numeric_dtype(summary[x_axis])
+
+    if x_is_numeric:
+        x_positions = {value: value for value in x_values}
+    else:
+        x_positions = {value: i for i, value in enumerate(x_values)}
+
+    for i, value in enumerate(series_values):
+        subset = summary[summary[series_by] == value].copy()
+        subset["_x_pos"] = subset[x_axis].map(x_positions)
+        subset = subset.sort_values("_x_pos")
+
+        x = subset["_x_pos"].to_numpy(dtype=float)
+        mean = subset["mean"].to_numpy(dtype=float)
+        min_y = subset["min"].to_numpy(dtype=float)
+        max_y = subset["max"].to_numpy(dtype=float)
+        color = cmap(i % cmap.N)
+
+        ax.plot(
+            x,
+            mean,
+            marker="o",
+            linewidth=1.6,
+            label=f"{series_by}={value}",
+            color=color,
+        )
+        ax.fill_between(x, min_y, max_y, color=color, alpha=0.16, linewidth=0)
+
+    ax.axhline(1.0, linestyle="--", linewidth=0.8, color="gray")
+    ax.set_yscale("log")
+
+    y_min, y_max = _ratio_axis_bounds(summary[["mean", "min", "max"]].to_numpy().ravel())
+    ax.set_ylim(y_min, y_max)
+
+    if not x_is_numeric:
+        ax.set_xticks(list(x_positions.values()))
+        ax.set_xticklabels([str(value) for value in x_values], rotation=30, ha="right")
+
+    ax.set_xlabel(x_axis)
+    ax.set_ylabel("Efficiency ratio ((score/runtime) / reference)")
+
+    title_bits = [
+        f"Score/Runtime Efficiency ({meta['name']}, "
+        f"grid {meta['grid_size']}x{meta['grid_size']})",
+        f"x={x_axis}, series={series_by}, reference={reference_method}",
+    ]
+    if filters:
+        filt_str = ", ".join(f"{k}={v}" for k, v in sorted(filters.items()))
+        title_bits.append(f"filters: {filt_str}")
+    ax.set_title("\n".join(title_bits))
+
+    ax.legend(loc="best", fontsize=8, frameon=True)
+    ax.grid(True, which="both", linestyle=":", linewidth=0.5, alpha=0.5)
+
+    grid_size = int(meta["grid_size"])
+    grid_dir = output_root / meta["name"] / f"grid_{grid_size}x{grid_size}"
+    grid_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = (
+        f"{meta['name']}__efficiency__x_{x_axis}"
+        f"__seriesby_{series_by}"
+        f"{_filters_suffix(filters)}"
+        f"__grid_{grid_size}x{grid_size}.png"
+    )
+
+    fig.tight_layout()
+    fig.savefig(grid_dir / filename, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+    return grid_dir
 
 
 def render_scatter(
@@ -343,7 +559,8 @@ def render_scatter(
     if raw_df.empty:
         raise ValueError("raw_df is empty; nothing to plot.")
 
-    df = _apply_filters(raw_df, filters)
+    non_method_filters, method_filter = _split_method_filter(filters)
+    df = _apply_filters(raw_df, non_method_filters)
     if df.empty:
         raise ValueError(f"No rows left after applying filters={filters!r}.")
 
@@ -362,7 +579,11 @@ def render_scatter(
         [join_keys + ["ref_score", "ref_runtime"]]
     )
 
-    non_ref = df[df["method"] != reference_method].copy()
+    if method_filter is None:
+        non_ref = df[df["method"] != reference_method].copy()
+    else:
+        non_ref = df[df["method"] == method_filter].copy()
+
     if non_ref.empty:
         raise ValueError(
             f"After filtering, only the reference method "

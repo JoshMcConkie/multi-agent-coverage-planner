@@ -5,6 +5,10 @@ Examples:
     python -m coverage_planner.experiments.plot_sweep scatter --series-by method
     python -m coverage_planner.experiments.plot_sweep scatter --series-by chunksize \\
         --sweep-id 3
+    python -m coverage_planner.experiments.plot_sweep efficiency --x-axis chunksize \\
+        --agents 3 --steps 8
+    python -m coverage_planner.experiments.plot_sweep efficiency \\
+        --db-path results/same_start/sweeps.db
 """
 
 from __future__ import annotations
@@ -20,7 +24,7 @@ def main() -> None:
     )
     parser.add_argument(
         "kind",
-        choices=["heatmap", "scatter"],
+        choices=["heatmap", "scatter", "efficiency"],
         help="Plot kind to render.",
     )
     parser.add_argument(
@@ -35,20 +39,54 @@ def main() -> None:
         help="Sweep name to look up when --sweep-id is not given.",
     )
     parser.add_argument(
+        "--db-path",
+        default=storage.DEFAULT_DB_PATH,
+        help="SQLite database path to read, resolved from the project root.",
+    )
+    parser.add_argument(
         "--series-by",
         default="method",
-        choices=list(plotting.SCATTER_SERIES_COLUMNS),
-        help="Column controlling color in scatter plots.",
+        choices=list(plotting.PLOT_DIMENSION_COLUMNS),
+        help="Column controlling color/series in scatter or efficiency plots.",
+    )
+    parser.add_argument(
+        "--x-axis",
+        default="agents",
+        choices=list(plotting.PLOT_DIMENSION_COLUMNS),
+        help="Column to use as the x-axis for efficiency plots.",
     )
     parser.add_argument(
         "--reference-method",
         default="seq_greedy_solve",
-        help="Reference method used as denominator for scatter ratios.",
+        help="Reference method used as denominator for ratio plots.",
+    )
+    parser.add_argument(
+        "--agents",
+        type=int,
+        default=None,
+        help="Filter raw-result plots to one agent count.",
+    )
+    parser.add_argument(
+        "--steps",
+        type=int,
+        default=None,
+        help="Filter raw-result plots to one planning horizon.",
+    )
+    parser.add_argument(
+        "--chunksize",
+        type=int,
+        default=None,
+        help="Filter raw-result plots to one chunksize.",
+    )
+    parser.add_argument(
+        "--method",
+        default=None,
+        help="Filter raw-result plots to one method name.",
     )
 
     args = parser.parse_args()
 
-    with storage.connect() as conn:
+    with storage.connect(args.db_path) as conn:
         if args.kind == "heatmap":
             sweep_id, meta, df = storage.load_sweep_df(
                 conn, sweep_id=args.sweep_id, name=args.name,
@@ -69,13 +107,39 @@ def main() -> None:
                 f"grid={meta['grid_size']}x{meta['grid_size']}, "
                 f"raw_rows={len(raw_df)})"
             )
-            print(f"Rendering scatter (series_by={args.series_by})...")
-            out_dir = plotting.render_scatter(
-                raw_df,
-                meta,
-                series_by=args.series_by,
-                reference_method=args.reference_method,
-            )
+            filters = {
+                key: value
+                for key, value in {
+                    "agents": args.agents,
+                    "steps": args.steps,
+                    "chunksize": args.chunksize,
+                    "method": args.method,
+                }.items()
+                if value is not None
+            }
+
+            if args.kind == "scatter":
+                print(f"Rendering scatter (series_by={args.series_by})...")
+                out_dir = plotting.render_scatter(
+                    raw_df,
+                    meta,
+                    series_by=args.series_by,
+                    reference_method=args.reference_method,
+                    filters=filters,
+                )
+            else:
+                print(
+                    "Rendering efficiency "
+                    f"(x_axis={args.x_axis}, series_by={args.series_by})..."
+                )
+                out_dir = plotting.render_efficiency_lines(
+                    raw_df,
+                    meta,
+                    x_axis=args.x_axis,
+                    series_by=args.series_by,
+                    reference_method=args.reference_method,
+                    filters=filters,
+                )
 
     print(f"Done. Wrote plots for sweep_id={sweep_id} to {out_dir}")
 

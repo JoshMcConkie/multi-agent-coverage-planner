@@ -134,16 +134,31 @@ uv run python -m coverage_planner.experiments.plot_sweep heatmap
 # Score-vs-runtime scatter of each method against seq_greedy_solve:
 uv run python -m coverage_planner.experiments.plot_sweep scatter --series-by method
 uv run python -m coverage_planner.experiments.plot_sweep scatter --series-by chunksize
+
+# Score-per-runtime efficiency lines against seq_greedy_solve:
+uv run python -m coverage_planner.experiments.plot_sweep efficiency
+uv run python -m coverage_planner.experiments.plot_sweep efficiency --x-axis chunksize --agents 3 --steps 8
 ```
 
 Useful flags:
 
 - `--sweep-id N` — plot a specific sweep instead of the latest.
 - `--name NAME` — pick the latest sweep with this name (default: `same_start`).
-- `--series-by {method,chunksize,agents,steps}` — color dimension for scatter
-  plots.
-- `--reference-method NAME` — denominator for the scatter ratios (default:
-  `seq_greedy_solve`).
+- `--db-path PATH` — read a different SQLite DB (default: `results/sweeps.db`);
+  relative paths resolve from the project root.
+- `--series-by {method,chunksize,agents,steps}` — color/series dimension for
+  scatter and efficiency plots.
+- `--x-axis {method,chunksize,agents,steps}` — x-axis for efficiency line plots
+  (default: `agents`).
+- `--reference-method NAME` — denominator for scatter and efficiency ratios
+  (default: `seq_greedy_solve`).
+- `--agents N`, `--steps N`, `--chunksize N`, `--method NAME` — filter
+  raw-result plots before rendering scatter or efficiency views.
+
+The efficiency plot computes `(method_score / method_runtime) /
+(reference_score / reference_runtime)` for matched sweep cells, then plots the
+mean ratio as a line with a min-to-max band. Values above `1.0` mean the method
+delivered more score per unit runtime than the reference method.
 
 ### Programmatic access
 For ad-hoc analysis (e.g. in a notebook), the storage helpers return DataFrames
@@ -167,4 +182,3 @@ with storage.connect("results/same_start/sweeps.db") as conn:
 `connect()` opens (and creates parent directories for) the database file but
 does not create tables; run a sweep or call `storage.init_schema(conn)` before
 querying. Sweeps are selected by `name` (latest match) or explicit `sweep_id`.
-
