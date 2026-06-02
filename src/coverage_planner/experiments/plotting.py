@@ -13,12 +13,15 @@ Two top-level entry points:
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib.colors import FuncNorm, TwoSlopeNorm
+from matplotlib.figure import Figure
+from PIL import Image
 
 
 SCATTER_SERIES_COLUMNS: tuple[str, ...] = (
@@ -29,6 +32,58 @@ SCATTER_SERIES_COLUMNS: tuple[str, ...] = (
 )
 
 PLOT_DIMENSION_COLUMNS = SCATTER_SERIES_COLUMNS
+
+DEFAULT_FRAME_DURATION = 0.5
+
+
+def _figure_to_png_bytes(fig: Figure, *, dpi: int = 200) -> bytes:
+    """Render a figure to PNG bytes (used to build GIF frames)."""
+    buffer = io.BytesIO()
+    fig.savefig(buffer, format="png", dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+    return buffer.getvalue()
+
+
+def _save_gif(
+    frames: list[bytes],
+    out_path: Path,
+    frame_duration: float = DEFAULT_FRAME_DURATION,
+) -> None:
+    """Encode a list of PNG byte buffers into a looping GIF.
+
+    Frames are padded to a common canvas size so that minor per-frame
+    bounding-box differences (e.g. tick-label widths) do not make the
+    animation jitter.
+    """
+    if not frames:
+        raise ValueError("No frames to encode into a GIF.")
+
+    images = [Image.open(io.BytesIO(buf)).convert("RGBA") for buf in frames]
+
+    max_w = max(im.width for im in images)
+    max_h = max(im.height for im in images)
+
+    padded: list[Image.Image] = []
+    for im in images:
+        if im.size == (max_w, max_h):
+            padded.append(im)
+            continue
+        canvas = Image.new("RGBA", (max_w, max_h), (255, 255, 255, 255))
+        offset = ((max_w - im.width) // 2, (max_h - im.height) // 2)
+        canvas.paste(im, offset, im)
+        padded.append(canvas)
+
+    rgb_frames = [im.convert("P", palette=Image.ADAPTIVE) for im in padded]
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    rgb_frames[0].save(
+        out_path,
+        save_all=True,
+        append_images=rgb_frames[1:],
+        duration=int(frame_duration * 1000),
+        loop=0,
+        disposal=2,
+    )
 
 
 def centered_ratio_norm(series_list, center=1.0, min_dev=0.05):
@@ -117,18 +172,26 @@ def add_centered_colorbar(fig, ax, im, norm, label):
     return cbar
 
 
-def plot_ratio_heatmap(
+def _draw_ratio_heatmap(
+    fig,
+    ax,
     df,
     *,
     agents,
     value_col,
     title,
     colorbar_label,
-    filename,
     cmap,
     norm,
-    save_dir,
+    index_values=None,
+    column_values=None,
 ):
+    """Draw a single ratio heatmap onto a provided fig/ax.
+
+    ``index_values``/``column_values`` pin the steps/chunksize axes so that
+    every frame of an animation shares identical ticks even when a given
+    agent count is missing some cells.
+    """
     df_n = df[df["agents"] == agents]
 
     heat = df_n.pivot(
@@ -137,9 +200,12 @@ def plot_ratio_heatmap(
         values=value_col,
     )
 
-    masked_heat = np.ma.masked_invalid(heat.to_numpy(dtype=float))
+    if index_values is not None:
+        heat = heat.reindex(index=index_values)
+    if column_values is not None:
+        heat = heat.reindex(columns=column_values)
 
-    fig, ax = plt.subplots()
+    masked_heat = np.ma.masked_invalid(heat.to_numpy(dtype=float))
 
     im = ax.imshow(
         masked_heat,
@@ -172,6 +238,33 @@ def plot_ratio_heatmap(
 
     fig.tight_layout(rect=[0, 0.04, 1, 1])
 
+
+def plot_ratio_heatmap(
+    df,
+    *,
+    agents,
+    value_col,
+    title,
+    colorbar_label,
+    filename,
+    cmap,
+    norm,
+    save_dir,
+):
+    fig, ax = plt.subplots()
+
+    _draw_ratio_heatmap(
+        fig,
+        ax,
+        df,
+        agents=agents,
+        value_col=value_col,
+        title=title,
+        colorbar_label=colorbar_label,
+        cmap=cmap,
+        norm=norm,
+    )
+
     plt.savefig(
         save_dir / filename,
         dpi=200,
@@ -181,19 +274,12 @@ def plot_ratio_heatmap(
     plt.close(fig)
 
 
-def render_heatmaps(
-    df: pd.DataFrame,
-    meta: dict,
-    output_root: Path = Path("results"),
-) -> Path:
-    """Render the standard 4-heatmap family for every agent count in the sweep."""
-    grid_size = int(meta["grid_size"])
-    max_agents = int(meta["max_agents"])
-    name = meta["name"]
+def _heatmap_specs(df: pd.DataFrame) -> list[dict]:
+    """Build the shared config for the standard 4-heatmap family.
 
-    grid_dir = output_root / name / f"grid_{grid_size}x{grid_size}"
-    grid_dir.mkdir(parents=True, exist_ok=True)
-
+    Each spec carries the value column, color map/norm, labels, and the
+    filename stub used for both the static PNGs and the animated GIFs.
+    """
     score_norm = centered_ratio_log_norm([
         df["split_ratio_to_seq_min"],
         df["split_ratio_to_seq_mean"],
@@ -213,70 +299,126 @@ def render_heatmaps(
     score_label = "Score ratio (split / greedy)\n1 = equal, >1 split better, <1 split worse"
     runtime_label = "Runtime ratio (split / greedy)\n1 = equal, >1 split slower, <1 split faster"
 
+    return [
+        {
+            "value_col": "split_ratio_to_seq_min",
+            "title_prefix": "Split vs Greedy Min Performance by Chunksize",
+            "colorbar_label": score_label,
+            "filename_stub": "split_min_perf_heatmap",
+            "cmap": score_cmap,
+            "norm": score_norm,
+        },
+        {
+            "value_col": "split_ratio_to_seq_mean",
+            "title_prefix": "Split vs Greedy Mean Performance by Chunksize",
+            "colorbar_label": score_label,
+            "filename_stub": "split_mean_perf_heatmap",
+            "cmap": score_cmap,
+            "norm": score_norm,
+        },
+        {
+            "value_col": "split_ratio_to_seq_max_runtime",
+            "title_prefix": "Split vs Greedy Max Runtime by Chunksize",
+            "colorbar_label": runtime_label,
+            "filename_stub": "split_max_runtime_heatmap",
+            "cmap": runtime_cmap,
+            "norm": runtime_norm,
+        },
+        {
+            "value_col": "split_ratio_to_seq_mean_runtime",
+            "title_prefix": "Split vs Greedy Mean Runtime by Chunksize",
+            "colorbar_label": runtime_label,
+            "filename_stub": "split_mean_runtime_heatmap",
+            "cmap": runtime_cmap,
+            "norm": runtime_norm,
+        },
+    ]
+
+
+def render_heatmaps(
+    df: pd.DataFrame,
+    meta: dict,
+    output_root: Path = Path("results"),
+) -> Path:
+    """Render the standard 4-heatmap family for every agent count in the sweep."""
+    grid_size = int(meta["grid_size"])
+    max_agents = int(meta["max_agents"])
+    name = meta["name"]
+
+    grid_dir = output_root / name / f"grid_{grid_size}x{grid_size}"
+    grid_dir.mkdir(parents=True, exist_ok=True)
+
+    specs = _heatmap_specs(df)
+
     for n in range(1, max_agents + 1):
-        plot_ratio_heatmap(
-            df,
-            agents=n,
-            value_col="split_ratio_to_seq_min",
-            title=f"Split vs Greedy Min Performance by Chunksize — agents={n}",
-            colorbar_label=score_label,
-            filename=(
-                f"{name}__split_min_perf_heatmap"
-                f"__agents_{n}"
-                f"__grid_{grid_size}x{grid_size}.png"
-            ),
-            cmap=score_cmap,
-            norm=score_norm,
-            save_dir=grid_dir,
-        )
+        for spec in specs:
+            plot_ratio_heatmap(
+                df,
+                agents=n,
+                value_col=spec["value_col"],
+                title=f"{spec['title_prefix']} — agents={n}",
+                colorbar_label=spec["colorbar_label"],
+                filename=(
+                    f"{name}__{spec['filename_stub']}"
+                    f"__agents_{n}"
+                    f"__grid_{grid_size}x{grid_size}.png"
+                ),
+                cmap=spec["cmap"],
+                norm=spec["norm"],
+                save_dir=grid_dir,
+            )
 
-        plot_ratio_heatmap(
-            df,
-            agents=n,
-            value_col="split_ratio_to_seq_mean",
-            title=f"Split vs Greedy Mean Performance by Chunksize — agents={n}",
-            colorbar_label=score_label,
-            filename=(
-                f"{name}__split_mean_perf_heatmap"
-                f"__agents_{n}"
-                f"__grid_{grid_size}x{grid_size}.png"
-            ),
-            cmap=score_cmap,
-            norm=score_norm,
-            save_dir=grid_dir,
-        )
+    return grid_dir
 
-        plot_ratio_heatmap(
-            df,
-            agents=n,
-            value_col="split_ratio_to_seq_max_runtime",
-            title=f"Split vs Greedy Max Runtime by Chunksize — agents={n}",
-            colorbar_label=runtime_label,
-            filename=(
-                f"{name}__split_max_runtime_heatmap"
-                f"__agents_{n}"
-                f"__grid_{grid_size}x{grid_size}.png"
-            ),
-            cmap=runtime_cmap,
-            norm=runtime_norm,
-            save_dir=grid_dir,
-        )
 
-        plot_ratio_heatmap(
-            df,
-            agents=n,
-            value_col="split_ratio_to_seq_mean_runtime",
-            title=f"Split vs Greedy Mean Runtime by Chunksize — agents={n}",
-            colorbar_label=runtime_label,
-            filename=(
-                f"{name}__split_mean_runtime_heatmap"
-                f"__agents_{n}"
-                f"__grid_{grid_size}x{grid_size}.png"
-            ),
-            cmap=runtime_cmap,
-            norm=runtime_norm,
-            save_dir=grid_dir,
+def render_heatmap_gif(
+    df: pd.DataFrame,
+    meta: dict,
+    *,
+    output_root: Path = Path("results"),
+    frame_duration: float = DEFAULT_FRAME_DURATION,
+) -> Path:
+    """Render the 4-heatmap family as GIFs animated over agent count.
+
+    Produces one GIF per heatmap variant (4 total). The steps/chunksize axes
+    and color norms are shared across frames so the animation stays aligned.
+    """
+    grid_size = int(meta["grid_size"])
+    max_agents = int(meta["max_agents"])
+    name = meta["name"]
+
+    grid_dir = output_root / name / f"grid_{grid_size}x{grid_size}"
+    grid_dir.mkdir(parents=True, exist_ok=True)
+
+    index_values = _sorted_unique(df["steps"])
+    column_values = _sorted_unique(df["chunksize"])
+    agent_values = list(range(1, max_agents + 1))
+
+    for spec in _heatmap_specs(df):
+        frames: list[bytes] = []
+        for n in agent_values:
+            fig, ax = plt.subplots()
+            _draw_ratio_heatmap(
+                fig,
+                ax,
+                df,
+                agents=n,
+                value_col=spec["value_col"],
+                title=f"{spec['title_prefix']} — agents={n}",
+                colorbar_label=spec["colorbar_label"],
+                cmap=spec["cmap"],
+                norm=spec["norm"],
+                index_values=index_values,
+                column_values=column_values,
+            )
+            frames.append(_figure_to_png_bytes(fig))
+
+        filename = (
+            f"{name}__{spec['filename_stub']}"
+            f"__anim_agents"
+            f"__grid_{grid_size}x{grid_size}.gif"
         )
+        _save_gif(frames, grid_dir / filename, frame_duration=frame_duration)
 
     return grid_dir
 
@@ -428,31 +570,51 @@ def _efficiency_summary(
     return summary
 
 
-def render_efficiency_lines(
-    raw_df: pd.DataFrame,
+def _efficiency_title(
     meta: dict,
     *,
-    x_axis: str = "agents",
-    series_by: str = "method",
-    reference_method: str = "seq_greedy_solve",
-    output_root: Path = Path("results"),
-    filters: dict | None = None,
-) -> Path:
-    """Render normalized score/runtime efficiency lines across sweep axes."""
-    summary = _efficiency_summary(
-        raw_df,
-        x_axis=x_axis,
-        series_by=series_by,
-        reference_method=reference_method,
-        filters=filters,
-    )
+    x_axis: str,
+    series_by: str,
+    reference_method: str,
+    filters: dict | None,
+) -> str:
+    title_bits = [
+        f"Score/Runtime Efficiency ({meta['name']}, "
+        f"grid {meta['grid_size']}x{meta['grid_size']})",
+        f"x={x_axis}, series={series_by}, reference={reference_method}",
+    ]
+    if filters:
+        filt_str = ", ".join(f"{k}={v}" for k, v in sorted(filters.items()))
+        title_bits.append(f"filters: {filt_str}")
+    return "\n".join(title_bits)
 
-    fig, ax = plt.subplots(figsize=(8, 5.5))
+
+def _draw_efficiency_lines(
+    ax,
+    summary: pd.DataFrame,
+    *,
+    x_axis: str,
+    series_by: str,
+    title: str,
+    x_values=None,
+    series_values=None,
+    x_is_numeric: bool | None = None,
+    y_bounds: tuple[float, float] | None = None,
+) -> None:
+    """Draw efficiency lines onto ``ax``.
+
+    Passing ``x_values``/``series_values``/``y_bounds`` explicitly pins the
+    axes, x-tick categories, and per-series colors so that every frame of an
+    animation stays visually aligned even when a frame is missing some series.
+    """
     cmap = plt.get_cmap("tab10")
 
-    x_values = _sorted_unique(summary[x_axis])
-    series_values = _sorted_unique(summary[series_by])
-    x_is_numeric = pd.api.types.is_numeric_dtype(summary[x_axis])
+    if x_values is None:
+        x_values = _sorted_unique(summary[x_axis])
+    if series_values is None:
+        series_values = _sorted_unique(summary[series_by])
+    if x_is_numeric is None:
+        x_is_numeric = pd.api.types.is_numeric_dtype(summary[x_axis])
 
     if x_is_numeric:
         x_positions = {value: value for value in x_values}
@@ -483,8 +645,11 @@ def render_efficiency_lines(
     ax.axhline(1.0, linestyle="--", linewidth=0.8, color="gray")
     ax.set_yscale("log")
 
-    y_min, y_max = _ratio_axis_bounds(summary[["mean", "min", "max"]].to_numpy().ravel())
-    ax.set_ylim(y_min, y_max)
+    if y_bounds is None:
+        y_bounds = _ratio_axis_bounds(
+            summary[["mean", "min", "max"]].to_numpy().ravel()
+        )
+    ax.set_ylim(*y_bounds)
 
     if not x_is_numeric:
         ax.set_xticks(list(x_positions.values()))
@@ -492,19 +657,44 @@ def render_efficiency_lines(
 
     ax.set_xlabel(x_axis)
     ax.set_ylabel("Efficiency ratio ((score/runtime) / reference)")
-
-    title_bits = [
-        f"Score/Runtime Efficiency ({meta['name']}, "
-        f"grid {meta['grid_size']}x{meta['grid_size']})",
-        f"x={x_axis}, series={series_by}, reference={reference_method}",
-    ]
-    if filters:
-        filt_str = ", ".join(f"{k}={v}" for k, v in sorted(filters.items()))
-        title_bits.append(f"filters: {filt_str}")
-    ax.set_title("\n".join(title_bits))
-
+    ax.set_title(title)
     ax.legend(loc="best", fontsize=8, frameon=True)
     ax.grid(True, which="both", linestyle=":", linewidth=0.5, alpha=0.5)
+
+
+def render_efficiency_lines(
+    raw_df: pd.DataFrame,
+    meta: dict,
+    *,
+    x_axis: str = "agents",
+    series_by: str = "method",
+    reference_method: str = "seq_greedy_solve",
+    output_root: Path = Path("results"),
+    filters: dict | None = None,
+) -> Path:
+    """Render normalized score/runtime efficiency lines across sweep axes."""
+    summary = _efficiency_summary(
+        raw_df,
+        x_axis=x_axis,
+        series_by=series_by,
+        reference_method=reference_method,
+        filters=filters,
+    )
+
+    fig, ax = plt.subplots(figsize=(8, 5.5))
+    _draw_efficiency_lines(
+        ax,
+        summary,
+        x_axis=x_axis,
+        series_by=series_by,
+        title=_efficiency_title(
+            meta,
+            x_axis=x_axis,
+            series_by=series_by,
+            reference_method=reference_method,
+            filters=filters,
+        ),
+    )
 
     grid_size = int(meta["grid_size"])
     grid_dir = output_root / meta["name"] / f"grid_{grid_size}x{grid_size}"
@@ -524,38 +714,127 @@ def render_efficiency_lines(
     return grid_dir
 
 
-def render_scatter(
+def render_efficiency_gif(
     raw_df: pd.DataFrame,
     meta: dict,
     *,
+    animate_over: str,
+    x_axis: str = "agents",
     series_by: str = "method",
     reference_method: str = "seq_greedy_solve",
     output_root: Path = Path("results"),
     filters: dict | None = None,
+    frame_duration: float = DEFAULT_FRAME_DURATION,
 ) -> Path:
-    """Render a score-vs-runtime scatter with each non-reference result
-    plotted as a ratio against the reference method run on the same
-    `(agents, steps, chunksize, start_row, start_col)` cell.
+    """Render an efficiency-line GIF, one frame per value of ``animate_over``.
 
-    Args:
-        raw_df: per-method, per-start results (from `storage.load_sweep_raw_df`).
-        meta: the sweep header dict (used for output path and titles).
-        series_by: column controlling color/marker. One of
-            {"method", "chunksize", "agents", "steps"}.
-        reference_method: method used as the denominator for ratios.
-        output_root: parent directory under which the plot is saved.
-        filters: optional dict of column->value to slice `raw_df` before plotting
-            (e.g. `{"agents": 3}`).
-
-    Returns:
-        The directory the plot was written to.
+    Axis bounds, x-tick categories, and per-series colors are computed once
+    over the full (filtered) data so the animation does not jitter.
     """
-    if series_by not in SCATTER_SERIES_COLUMNS:
+    if animate_over not in PLOT_DIMENSION_COLUMNS:
         raise ValueError(
-            f"series_by={series_by!r} not supported. "
-            f"Choose one of {SCATTER_SERIES_COLUMNS}."
+            f"animate_over={animate_over!r} not supported. "
+            f"Choose one of {PLOT_DIMENSION_COLUMNS}."
+        )
+    if animate_over in (x_axis, series_by):
+        raise ValueError(
+            "animate_over must differ from both x_axis and series_by "
+            f"(got animate_over={animate_over!r}, x_axis={x_axis!r}, "
+            f"series_by={series_by!r})."
         )
 
+    base_filters = {
+        key: value
+        for key, value in (filters or {}).items()
+        if key != animate_over
+    }
+
+    global_summary = _efficiency_summary(
+        raw_df,
+        x_axis=x_axis,
+        series_by=series_by,
+        reference_method=reference_method,
+        filters=base_filters or None,
+    )
+
+    ratios = _efficiency_ratios(
+        raw_df,
+        x_axis=x_axis,
+        series_by=series_by,
+        reference_method=reference_method,
+        filters=base_filters or None,
+    )
+    frame_values = _sorted_unique(ratios[animate_over])
+    if not frame_values:
+        raise ValueError(
+            f"No values of {animate_over!r} available to animate over."
+        )
+
+    x_values = _sorted_unique(global_summary[x_axis])
+    series_values = _sorted_unique(global_summary[series_by])
+    x_is_numeric = pd.api.types.is_numeric_dtype(global_summary[x_axis])
+    y_bounds = _ratio_axis_bounds(
+        global_summary[["mean", "min", "max"]].to_numpy().ravel()
+    )
+
+    frames: list[bytes] = []
+    for value in frame_values:
+        frame_filters = {**base_filters, animate_over: value}
+        try:
+            summary = _efficiency_summary(
+                raw_df,
+                x_axis=x_axis,
+                series_by=series_by,
+                reference_method=reference_method,
+                filters=frame_filters,
+            )
+        except ValueError:
+            summary = global_summary.iloc[0:0]
+
+        fig, ax = plt.subplots(figsize=(8, 5.5))
+        _draw_efficiency_lines(
+            ax,
+            summary,
+            x_axis=x_axis,
+            series_by=series_by,
+            title=_efficiency_title(
+                meta,
+                x_axis=x_axis,
+                series_by=series_by,
+                reference_method=reference_method,
+                filters=frame_filters,
+            ),
+            x_values=x_values,
+            series_values=series_values,
+            x_is_numeric=x_is_numeric,
+            y_bounds=y_bounds,
+        )
+        fig.tight_layout()
+        frames.append(_figure_to_png_bytes(fig))
+
+    grid_size = int(meta["grid_size"])
+    grid_dir = output_root / meta["name"] / f"grid_{grid_size}x{grid_size}"
+
+    filename = (
+        f"{meta['name']}__efficiency__x_{x_axis}"
+        f"__seriesby_{series_by}"
+        f"__anim_{animate_over}"
+        f"{_filters_suffix(base_filters or None)}"
+        f"__grid_{grid_size}x{grid_size}.gif"
+    )
+
+    _save_gif(frames, grid_dir / filename, frame_duration=frame_duration)
+    return grid_dir
+
+
+def _scatter_ratios(
+    raw_df: pd.DataFrame,
+    *,
+    series_by: str,
+    reference_method: str,
+    filters: dict | None,
+) -> pd.DataFrame:
+    """Compute per-result runtime/score ratios against the reference method."""
     if raw_df.empty:
         raise ValueError("raw_df is empty; nothing to plot.")
 
@@ -608,10 +887,43 @@ def render_scatter(
             "scores or runtimes in the reference method)."
         )
 
-    fig, ax = plt.subplots(figsize=(7, 6))
+    return merged
 
-    series_values = sorted(merged[series_by].unique(), key=lambda v: (str(type(v)), v))
+
+def _scatter_title(meta: dict, *, series_by: str, filters: dict | None) -> str:
+    title_bits = [
+        f"Score vs Runtime ({meta['name']}, "
+        f"grid {meta['grid_size']}x{meta['grid_size']})",
+        f"colored by {series_by}",
+    ]
+    if filters:
+        filt_str = ", ".join(f"{k}={v}" for k, v in sorted(filters.items()))
+        title_bits.append(f"filters: {filt_str}")
+    return "\n".join(title_bits)
+
+
+def _draw_scatter(
+    ax,
+    merged: pd.DataFrame,
+    *,
+    series_by: str,
+    reference_method: str,
+    title: str,
+    series_values=None,
+    x_bounds: tuple[float, float] | None = None,
+    y_bounds: tuple[float, float] | None = None,
+) -> None:
+    """Draw a ratio scatter onto ``ax``.
+
+    Passing ``series_values``/``x_bounds``/``y_bounds`` pins colors and axis
+    extents so animation frames stay aligned even when a frame is empty.
+    """
     cmap = plt.get_cmap("tab10")
+
+    if series_values is None:
+        series_values = sorted(
+            merged[series_by].unique(), key=lambda v: (str(type(v)), v)
+        )
 
     for i, value in enumerate(series_values):
         subset = merged[merged[series_by] == value]
@@ -633,29 +945,70 @@ def render_scatter(
         label=f"{reference_method} (reference)",
     )
 
-    x_min, x_max = _ratio_axis_bounds(merged["runtime_ratio"].to_numpy())
-    y_min, y_max = _ratio_axis_bounds(merged["score_ratio"].to_numpy())
+    if x_bounds is None:
+        x_bounds = _ratio_axis_bounds(merged["runtime_ratio"].to_numpy())
+    if y_bounds is None:
+        y_bounds = _ratio_axis_bounds(merged["score_ratio"].to_numpy())
 
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.set_xlim(x_min, x_max)
-    ax.set_ylim(y_min, y_max)
+    ax.set_xlim(*x_bounds)
+    ax.set_ylim(*y_bounds)
 
     ax.set_xlabel(f"Runtime ratio (method / {reference_method})")
     ax.set_ylabel(f"Score ratio (method / {reference_method})")
-
-    title_bits = [
-        f"Score vs Runtime ({meta['name']}, "
-        f"grid {meta['grid_size']}x{meta['grid_size']})",
-        f"colored by {series_by}",
-    ]
-    if filters:
-        filt_str = ", ".join(f"{k}={v}" for k, v in sorted(filters.items()))
-        title_bits.append(f"filters: {filt_str}")
-    ax.set_title("\n".join(title_bits))
-
+    ax.set_title(title)
     ax.legend(loc="best", fontsize=8, frameon=True)
     ax.grid(True, which="both", linestyle=":", linewidth=0.5, alpha=0.5)
+
+
+def render_scatter(
+    raw_df: pd.DataFrame,
+    meta: dict,
+    *,
+    series_by: str = "method",
+    reference_method: str = "seq_greedy_solve",
+    output_root: Path = Path("results"),
+    filters: dict | None = None,
+) -> Path:
+    """Render a score-vs-runtime scatter with each non-reference result
+    plotted as a ratio against the reference method run on the same
+    `(agents, steps, chunksize, start_row, start_col)` cell.
+
+    Args:
+        raw_df: per-method, per-start results (from `storage.load_sweep_raw_df`).
+        meta: the sweep header dict (used for output path and titles).
+        series_by: column controlling color/marker. One of
+            {"method", "chunksize", "agents", "steps"}.
+        reference_method: method used as the denominator for ratios.
+        output_root: parent directory under which the plot is saved.
+        filters: optional dict of column->value to slice `raw_df` before plotting
+            (e.g. `{"agents": 3}`).
+
+    Returns:
+        The directory the plot was written to.
+    """
+    if series_by not in SCATTER_SERIES_COLUMNS:
+        raise ValueError(
+            f"series_by={series_by!r} not supported. "
+            f"Choose one of {SCATTER_SERIES_COLUMNS}."
+        )
+
+    merged = _scatter_ratios(
+        raw_df,
+        series_by=series_by,
+        reference_method=reference_method,
+        filters=filters,
+    )
+
+    fig, ax = plt.subplots(figsize=(7, 6))
+    _draw_scatter(
+        ax,
+        merged,
+        series_by=series_by,
+        reference_method=reference_method,
+        title=_scatter_title(meta, series_by=series_by, filters=filters),
+    )
 
     grid_size = int(meta["grid_size"])
     grid_dir = output_root / meta["name"] / f"grid_{grid_size}x{grid_size}"
@@ -671,4 +1024,98 @@ def render_scatter(
     fig.savefig(grid_dir / filename, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
+    return grid_dir
+
+
+def render_scatter_gif(
+    raw_df: pd.DataFrame,
+    meta: dict,
+    *,
+    animate_over: str,
+    series_by: str = "method",
+    reference_method: str = "seq_greedy_solve",
+    output_root: Path = Path("results"),
+    filters: dict | None = None,
+    frame_duration: float = DEFAULT_FRAME_DURATION,
+) -> Path:
+    """Render a score-vs-runtime scatter GIF, one frame per ``animate_over`` value."""
+    if series_by not in SCATTER_SERIES_COLUMNS:
+        raise ValueError(
+            f"series_by={series_by!r} not supported. "
+            f"Choose one of {SCATTER_SERIES_COLUMNS}."
+        )
+    if animate_over not in SCATTER_SERIES_COLUMNS:
+        raise ValueError(
+            f"animate_over={animate_over!r} not supported. "
+            f"Choose one of {SCATTER_SERIES_COLUMNS}."
+        )
+    if animate_over == series_by:
+        raise ValueError(
+            "animate_over must differ from series_by "
+            f"(got animate_over={animate_over!r}, series_by={series_by!r})."
+        )
+
+    base_filters = {
+        key: value
+        for key, value in (filters or {}).items()
+        if key != animate_over
+    }
+
+    global_merged = _scatter_ratios(
+        raw_df,
+        series_by=series_by,
+        reference_method=reference_method,
+        filters=base_filters or None,
+    )
+
+    frame_values = _sorted_unique(global_merged[animate_over])
+    if not frame_values:
+        raise ValueError(
+            f"No values of {animate_over!r} available to animate over."
+        )
+
+    series_values = sorted(
+        global_merged[series_by].unique(), key=lambda v: (str(type(v)), v)
+    )
+    x_bounds = _ratio_axis_bounds(global_merged["runtime_ratio"].to_numpy())
+    y_bounds = _ratio_axis_bounds(global_merged["score_ratio"].to_numpy())
+
+    frames: list[bytes] = []
+    for value in frame_values:
+        frame_filters = {**base_filters, animate_over: value}
+        try:
+            merged = _scatter_ratios(
+                raw_df,
+                series_by=series_by,
+                reference_method=reference_method,
+                filters=frame_filters,
+            )
+        except ValueError:
+            merged = global_merged.iloc[0:0]
+
+        fig, ax = plt.subplots(figsize=(7, 6))
+        _draw_scatter(
+            ax,
+            merged,
+            series_by=series_by,
+            reference_method=reference_method,
+            title=_scatter_title(meta, series_by=series_by, filters=frame_filters),
+            series_values=series_values,
+            x_bounds=x_bounds,
+            y_bounds=y_bounds,
+        )
+        fig.tight_layout()
+        frames.append(_figure_to_png_bytes(fig))
+
+    grid_size = int(meta["grid_size"])
+    grid_dir = output_root / meta["name"] / f"grid_{grid_size}x{grid_size}"
+
+    filename = (
+        f"{meta['name']}__scatter__seriesby_{series_by}"
+        f"__anim_{animate_over}"
+        f"{_filters_suffix(base_filters or None)}"
+        f"__grid_{grid_size}x{grid_size}.gif"
+    )
+
+    _save_gif(frames, grid_dir / filename, frame_duration=frame_duration)
     return grid_dir

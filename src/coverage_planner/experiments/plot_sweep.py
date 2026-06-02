@@ -9,6 +9,8 @@ Examples:
         --agents 3 --steps 8
     python -m coverage_planner.experiments.plot_sweep efficiency \\
         --db-path results/same_start/sweeps.db
+    python -m coverage_planner.experiments.plot_sweep efficiency --x-axis chunksize \\
+        --steps 8 --animate-over agents --frame-duration 0.5
 """
 
 from __future__ import annotations
@@ -83,8 +85,42 @@ def main() -> None:
         default=None,
         help="Filter raw-result plots to one method name.",
     )
+    parser.add_argument(
+        "--animate-over",
+        default=None,
+        choices=list(plotting.PLOT_DIMENSION_COLUMNS),
+        help=(
+            "Render a looping GIF with one frame per value of this column "
+            "(values taken from the data). For heatmaps only 'agents' is valid."
+        ),
+    )
+    parser.add_argument(
+        "--frame-duration",
+        type=float,
+        default=plotting.DEFAULT_FRAME_DURATION,
+        help="Seconds each GIF frame is shown (only used with --animate-over).",
+    )
 
     args = parser.parse_args()
+
+    if args.animate_over is not None:
+        if args.kind == "heatmap":
+            if args.animate_over != "agents":
+                parser.error(
+                    "heatmap GIFs can only animate over 'agents' "
+                    f"(got --animate-over {args.animate_over})."
+                )
+        else:
+            if args.animate_over == args.x_axis and args.kind == "efficiency":
+                parser.error(
+                    "--animate-over must differ from --x-axis "
+                    f"(both are {args.animate_over!r})."
+                )
+            if args.animate_over == args.series_by:
+                parser.error(
+                    "--animate-over must differ from --series-by "
+                    f"(both are {args.animate_over!r})."
+                )
 
     with storage.connect(args.db_path) as conn:
         if args.kind == "heatmap":
@@ -96,8 +132,17 @@ def main() -> None:
                 f"grid={meta['grid_size']}x{meta['grid_size']}, "
                 f"rows={len(df)})"
             )
-            print("Rendering heatmaps...")
-            out_dir = plotting.render_heatmaps(df, meta)
+            if args.animate_over is not None:
+                print(
+                    "Rendering heatmap GIFs animated over agents "
+                    f"(frame_duration={args.frame_duration}s)..."
+                )
+                out_dir = plotting.render_heatmap_gif(
+                    df, meta, frame_duration=args.frame_duration,
+                )
+            else:
+                print("Rendering heatmaps...")
+                out_dir = plotting.render_heatmaps(df, meta)
         else:
             sweep_id, meta, raw_df = storage.load_sweep_raw_df(
                 conn, sweep_id=args.sweep_id, name=args.name,
@@ -118,28 +163,71 @@ def main() -> None:
                 if value is not None
             }
 
-            if args.kind == "scatter":
-                print(f"Rendering scatter (series_by={args.series_by})...")
-                out_dir = plotting.render_scatter(
-                    raw_df,
-                    meta,
-                    series_by=args.series_by,
-                    reference_method=args.reference_method,
-                    filters=filters,
-                )
-            else:
+            if args.animate_over is not None and args.animate_over in filters:
                 print(
-                    "Rendering efficiency "
-                    f"(x_axis={args.x_axis}, series_by={args.series_by})..."
+                    f"Ignoring --{args.animate_over} filter; it is driven "
+                    "per-frame by --animate-over."
                 )
-                out_dir = plotting.render_efficiency_lines(
-                    raw_df,
-                    meta,
-                    x_axis=args.x_axis,
-                    series_by=args.series_by,
-                    reference_method=args.reference_method,
-                    filters=filters,
-                )
+                filters = {
+                    k: v for k, v in filters.items() if k != args.animate_over
+                }
+
+            if args.kind == "scatter":
+                if args.animate_over is not None:
+                    print(
+                        f"Rendering scatter GIF (series_by={args.series_by}, "
+                        f"animate_over={args.animate_over}, "
+                        f"frame_duration={args.frame_duration}s)..."
+                    )
+                    out_dir = plotting.render_scatter_gif(
+                        raw_df,
+                        meta,
+                        animate_over=args.animate_over,
+                        series_by=args.series_by,
+                        reference_method=args.reference_method,
+                        filters=filters,
+                        frame_duration=args.frame_duration,
+                    )
+                else:
+                    print(f"Rendering scatter (series_by={args.series_by})...")
+                    out_dir = plotting.render_scatter(
+                        raw_df,
+                        meta,
+                        series_by=args.series_by,
+                        reference_method=args.reference_method,
+                        filters=filters,
+                    )
+            else:
+                if args.animate_over is not None:
+                    print(
+                        "Rendering efficiency GIF "
+                        f"(x_axis={args.x_axis}, series_by={args.series_by}, "
+                        f"animate_over={args.animate_over}, "
+                        f"frame_duration={args.frame_duration}s)..."
+                    )
+                    out_dir = plotting.render_efficiency_gif(
+                        raw_df,
+                        meta,
+                        animate_over=args.animate_over,
+                        x_axis=args.x_axis,
+                        series_by=args.series_by,
+                        reference_method=args.reference_method,
+                        filters=filters,
+                        frame_duration=args.frame_duration,
+                    )
+                else:
+                    print(
+                        "Rendering efficiency "
+                        f"(x_axis={args.x_axis}, series_by={args.series_by})..."
+                    )
+                    out_dir = plotting.render_efficiency_lines(
+                        raw_df,
+                        meta,
+                        x_axis=args.x_axis,
+                        series_by=args.series_by,
+                        reference_method=args.reference_method,
+                        filters=filters,
+                    )
 
     print(f"Done. Wrote plots for sweep_id={sweep_id} to {out_dir}")
 
