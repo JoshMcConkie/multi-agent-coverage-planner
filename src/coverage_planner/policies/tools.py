@@ -1,6 +1,6 @@
 from itertools import product
 from operator import add
-
+import numpy as np
 
 from coverage_planner.objective import Objective
 from coverage_planner.env import GridWorld, Model
@@ -12,16 +12,12 @@ def utility_score(choice_set,util_mat, prior_util_row=None) -> tuple[int,list[in
     bonus to utility.
 
     '''
-    score = 0
-    n_choices = len(choice_set)    # original number of choices w/o prior util row
+    n = len(choice_set)
+    rows = util_mat[choice_set]
     if prior_util_row is not None:
-        util_mat += prior_util_row
-        choice_set += [n_choices]
-    
-    for col in range(util_mat.shape[1]):
-        # print(f"util crop: {util_mat[choice_set]}")
-        score += max([util_mat[choice][col] for choice in choice_set])
-    return score, choice_set[:n_choices]
+        rows = np.vstack([rows, prior_util_row])
+    score = rows.max(axis=0).sum()
+    return score, choice_set[:n]
 
 
 def best_greedy_choice(options: list[int],choice_hist: list[int],util_mat, prior_util_row=None)-> tuple[int,list[int]]:
