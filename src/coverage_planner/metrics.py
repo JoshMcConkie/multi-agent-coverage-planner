@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from coverage_planner.env import Result
-from coverage_planner.policies.centralized import best_seq_greedy_solve
+from coverage_planner.policies.greedy import best_order_full_horizon_greedy_solve
 
 
 @dataclass
@@ -27,7 +27,7 @@ class CompareSweep:
 
     def summary(
         self,
-        baseline_method: str = best_seq_greedy_solve.__name__,
+        baseline_method: str = best_order_full_horizon_greedy_solve.__name__,
         reference_method: str | None = None,
         include_baseline: bool = True
     ):

@@ -1,19 +1,22 @@
 from coverage_planner.env import GridWorld, Result, EmptyResult
 
 from coverage_planner.objective import Coverage
-from coverage_planner.policies.tools import path_model
-from coverage_planner.policies.centralized import best_seq_greedy_solve
-from coverage_planner.policies.sequential import seq_greedy_solve, split_seq_solve
+from coverage_planner.policies.tools import build_path_model
+from coverage_planner.policies.greedy import (
+    best_order_full_horizon_greedy_solve,
+    full_horizon_greedy_solve,
+    rolling_horizon_greedy_solve,
+)
 
 def run_single_compare(agents: list, agent_order,size: int, 
                        steps: int, chunksize: int, run_optimal: bool = True)->list[Result | EmptyResult]:
     grid = GridWorld(size)
     grid.init_agent(agents)
-    model = path_model(grid,Coverage,steps,agent_order)
-    seq_result = seq_greedy_solve(model)
-    split_result = split_seq_solve(model, chunksize)
+    model = build_path_model(grid,Coverage,steps,agent_order)
+    seq_result = full_horizon_greedy_solve(model)
+    split_result = rolling_horizon_greedy_solve(model, chunksize)
     if run_optimal:
-        best_seq_result = best_seq_greedy_solve(model)
+        best_seq_result = best_order_full_horizon_greedy_solve(model)
     else:
         best_seq_result = EmptyResult()
     return [seq_result,split_result,best_seq_result]
@@ -38,11 +41,11 @@ def init_world(size: int):
     return grid
 
 grid = init_world(WORLD_SIZE)
-model = path_model(grid,Coverage,steps=STEPS,agent_order=AGENT_ORDER[:NUM_AGENTS])
+model = build_path_model(grid,Coverage,steps=STEPS,agent_order=AGENT_ORDER[:NUM_AGENTS])
 
-seq_result = seq_greedy_solve(model)
-split_result = split_seq_solve(model, chunksize=SPLIT_CHUNKSIZE)
-best_seq_result = best_seq_greedy_solve(model)
+seq_result = full_horizon_greedy_solve(model)
+split_result = rolling_horizon_greedy_solve(model, chunksize=SPLIT_CHUNKSIZE)
+best_seq_result = best_order_full_horizon_greedy_solve(model)
 
 compare = CompareResults([seq_result,split_result,best_seq_result])
 print(compare.to_dataframe())

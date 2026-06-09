@@ -6,7 +6,7 @@ from coverage_planner.objective import Objective
 from coverage_planner.env import GridWorld, Model
 
 
-def utility_score(choice_set,util_mat, prior_util_row=None) -> tuple[int,list[int]]:
+def coverage_score(choice_set,util_mat, prior_coverage=None) -> tuple[int,list[int]]:
     '''Return utility score for given choice set of a utility matrix.
     This assumes submodularity such that double coverage offers no 
     bonus to utility.
@@ -14,13 +14,13 @@ def utility_score(choice_set,util_mat, prior_util_row=None) -> tuple[int,list[in
     '''
     n = len(choice_set)
     rows = util_mat[choice_set]
-    if prior_util_row is not None:
-        rows = np.vstack([rows, prior_util_row])
+    if prior_coverage is not None:
+        rows = np.vstack([rows, prior_coverage])
     score = rows.max(axis=0).sum()
     return score, choice_set[:n]
 
 
-def best_greedy_choice(options: list[int],choice_hist: list[int],util_mat, prior_util_row=None)-> tuple[int,list[int]]:
+def best_marginal_choice(options: list[int],choice_hist: list[int],util_mat, prior_coverage=None)-> tuple[int,list[int]]:
     '''Get next choice with greatest marginal utility.
 
     Args: 
@@ -29,10 +29,10 @@ def best_greedy_choice(options: list[int],choice_hist: list[int],util_mat, prior
         util_mat (np.ndarray): The C (aka omega) matrix of allocations and utilities (Nemhauser et al., 1978)
     '''
    
-    return max((utility_score(choice_hist+[o],util_mat, prior_util_row) for o in options))
+    return max((coverage_score(choice_hist+[o],util_mat, prior_coverage) for o in options))
 
 
-def get_all_paths(grid: GridWorld,steps: int,
+def enumerate_paths(grid: GridWorld,steps: int,
                   start_row: tuple[int,int],start_col:tuple[int,int]) -> list[list[tuple[int,int]]]:
     """Generate all possible path for an agent in the grid.
 
@@ -64,7 +64,7 @@ def get_all_paths(grid: GridWorld,steps: int,
     step(steps,[(start_row,start_col)])
     return paths
 
-def update_agents(model: Model,path_ids: list[int])-> dict[int,list[int,int]]:
+def commit_paths_to_agents(model: Model,path_ids: list[int])-> dict[int,list[int,int]]:
     '''Append the chosen paths to the agents in the grid.
     '''
     paths_by_agent = dict()
@@ -77,7 +77,7 @@ def update_agents(model: Model,path_ids: list[int])-> dict[int,list[int,int]]:
     model.grid.update()
     return paths_by_agent
 
-def path_model(grid: GridWorld,objective: Objective, steps: int, agent_order=None):
+def build_path_model(grid: GridWorld,objective: Objective, steps: int, agent_order=None):
     '''Creates `Model` object containing grid, utility matrix, available agents path, agent_order
     (if applicable), and all available paths.
     '''
@@ -87,7 +87,7 @@ def path_model(grid: GridWorld,objective: Objective, steps: int, agent_order=Non
     coordinates = list(product(range(grid.size),range(grid.size)))
 
     for agent in grid.agents:
-        solutions = get_all_paths(grid,steps,agent.path[-1][0],agent.path[-1][1])
+        solutions = enumerate_paths(grid,steps,agent.path[-1][0],agent.path[-1][1])
         # print(f"Agent {agent.id} Solution Sample: {solutions[:5]}")
         all_paths += solutions
         agent_path_dict[agent.id] = [i+e for e in range(len(solutions))] # collect addresses of path options as found in all_paths

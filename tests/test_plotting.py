@@ -13,7 +13,7 @@ def _row(
     chunksize=1,
     start_row=0,
     start_col=0,
-    method="seq_greedy_solve",
+    method="full_horizon_greedy_solve",
     score=10.0,
     runtime=2.0,
 ):
@@ -31,10 +31,10 @@ def _row(
 
 def test_efficiency_summary_calculates_reference_normalized_ratios():
     raw_df = pd.DataFrame([
-        _row(start_col=0, method="seq_greedy_solve", score=10, runtime=2),
-        _row(start_col=0, method="split_seq_solve", score=12, runtime=2),
-        _row(start_col=1, method="seq_greedy_solve", score=8, runtime=4),
-        _row(start_col=1, method="split_seq_solve", score=12, runtime=3),
+        _row(start_col=0, method="full_horizon_greedy_solve", score=10, runtime=2),
+        _row(start_col=0, method="rolling_horizon_greedy_solve", score=12, runtime=2),
+        _row(start_col=1, method="full_horizon_greedy_solve", score=8, runtime=4),
+        _row(start_col=1, method="rolling_horizon_greedy_solve", score=12, runtime=3),
     ])
 
     summary = plotting._efficiency_summary(
@@ -43,8 +43,8 @@ def test_efficiency_summary_calculates_reference_normalized_ratios():
         series_by="method",
     )
 
-    ref = summary[summary["method"] == "seq_greedy_solve"].iloc[0]
-    split = summary[summary["method"] == "split_seq_solve"].iloc[0]
+    ref = summary[summary["method"] == "full_horizon_greedy_solve"].iloc[0]
+    split = summary[summary["method"] == "rolling_horizon_greedy_solve"].iloc[0]
 
     assert ref["mean"] == pytest.approx(1.0)
     assert ref["min"] == pytest.approx(1.0)
@@ -57,10 +57,10 @@ def test_efficiency_summary_calculates_reference_normalized_ratios():
 
 def test_efficiency_ratios_drop_nonpositive_reference_runtime():
     raw_df = pd.DataFrame([
-        _row(start_col=0, method="seq_greedy_solve", score=10, runtime=2),
-        _row(start_col=0, method="split_seq_solve", score=12, runtime=2),
-        _row(start_col=1, method="seq_greedy_solve", score=8, runtime=0),
-        _row(start_col=1, method="split_seq_solve", score=12, runtime=3),
+        _row(start_col=0, method="full_horizon_greedy_solve", score=10, runtime=2),
+        _row(start_col=0, method="rolling_horizon_greedy_solve", score=12, runtime=2),
+        _row(start_col=1, method="full_horizon_greedy_solve", score=8, runtime=0),
+        _row(start_col=1, method="rolling_horizon_greedy_solve", score=12, runtime=3),
     ])
 
     ratios = plotting._efficiency_ratios(
@@ -70,31 +70,31 @@ def test_efficiency_ratios_drop_nonpositive_reference_runtime():
     )
 
     assert set(ratios["start_col"]) == {0}
-    split = ratios[ratios["method"] == "split_seq_solve"].iloc[0]
+    split = ratios[ratios["method"] == "rolling_horizon_greedy_solve"].iloc[0]
     assert split["efficiency_ratio"] == pytest.approx(1.2)
 
 
 def test_efficiency_method_filter_keeps_reference_for_denominator():
     raw_df = pd.DataFrame([
-        _row(start_col=0, method="seq_greedy_solve", score=10, runtime=2),
-        _row(start_col=0, method="split_seq_solve", score=12, runtime=2),
+        _row(start_col=0, method="full_horizon_greedy_solve", score=10, runtime=2),
+        _row(start_col=0, method="rolling_horizon_greedy_solve", score=12, runtime=2),
     ])
 
     ratios = plotting._efficiency_ratios(
         raw_df,
         x_axis="agents",
         series_by="method",
-        filters={"method": "split_seq_solve"},
+        filters={"method": "rolling_horizon_greedy_solve"},
     )
 
-    assert list(ratios["method"]) == ["split_seq_solve"]
+    assert list(ratios["method"]) == ["rolling_horizon_greedy_solve"]
     assert ratios.iloc[0]["efficiency_ratio"] == pytest.approx(1.2)
 
 
 def test_efficiency_rejects_same_axis_and_series():
     raw_df = pd.DataFrame([
-        _row(method="seq_greedy_solve"),
-        _row(method="split_seq_solve"),
+        _row(method="full_horizon_greedy_solve"),
+        _row(method="rolling_horizon_greedy_solve"),
     ])
 
     with pytest.raises(ValueError, match="x_axis and series_by"):
@@ -107,10 +107,10 @@ def test_efficiency_rejects_same_axis_and_series():
 
 def test_render_efficiency_lines_writes_expected_file(tmp_path: Path):
     raw_df = pd.DataFrame([
-        _row(start_col=0, method="seq_greedy_solve", score=10, runtime=2),
-        _row(start_col=0, method="split_seq_solve", score=12, runtime=2),
-        _row(agents=2, start_col=0, method="seq_greedy_solve", score=12, runtime=3),
-        _row(agents=2, start_col=0, method="split_seq_solve", score=18, runtime=3),
+        _row(start_col=0, method="full_horizon_greedy_solve", score=10, runtime=2),
+        _row(start_col=0, method="rolling_horizon_greedy_solve", score=12, runtime=2),
+        _row(agents=2, start_col=0, method="full_horizon_greedy_solve", score=12, runtime=3),
+        _row(agents=2, start_col=0, method="rolling_horizon_greedy_solve", score=18, runtime=3),
     ])
     meta = {"name": "unit", "grid_size": 4}
 

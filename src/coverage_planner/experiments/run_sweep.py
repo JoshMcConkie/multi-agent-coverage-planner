@@ -12,12 +12,12 @@ from coverage_planner.env import Agent, EmptyResult
 from coverage_planner.experiments import storage
 from coverage_planner.experiments.run_single import run_single_compare
 from coverage_planner.metrics import CompareSweep
-from coverage_planner.policies.sequential import seq_greedy_solve, split_seq_solve
+from coverage_planner.policies.greedy import full_horizon_greedy_solve, rolling_horizon_greedy_solve
 
 from tqdm.auto import tqdm
 
 #=====All agents start at same location======
-def agents_stacked(num_agents, size, steps, chunksize, run_optimal=True):
+def run_all_start_positions(num_agents, size, steps, chunksize, run_optimal=True):
     full_results = []
     per_start = []
     for row in range(size):
@@ -33,7 +33,7 @@ def agents_stacked(num_agents, size, steps, chunksize, run_optimal=True):
     return CompareSweep(full_results), per_start
 
 
-def run_cell(steps, n, chunk):
+def run_sweep_cell(steps, n, chunk):
     '''Run a single sweep cell over all start positions and return plain,
     picklable result data.
 
@@ -41,7 +41,7 @@ def run_cell(steps, n, chunk):
         new_row (dict): aggregate ratios for this (steps, agents, chunksize) cell.
         raw_rows_cell (list[dict]): per-method, per-start-cell raw scores/runtimes.
     '''
-    results, per_start = agents_stacked(
+    results, per_start = run_all_start_positions(
         n,
         MAX_SIZE,
         steps,
@@ -69,24 +69,24 @@ def run_cell(steps, n, chunk):
                 "runtime": float(res.runtime),
             })
 
-    summary = results.summary(reference_method=seq_greedy_solve.__name__,
+    summary = results.summary(reference_method=full_horizon_greedy_solve.__name__,
                               include_baseline=SOLVE_OPTIMAL)
 
     split_ratio_to_seq_min_score = summary.loc[
-        split_seq_solve.__name__,
+        rolling_horizon_greedy_solve.__name__,
         ("score", "min_ratio_to_reference"),
     ]
     split_ratio_to_seq_mean_score = summary.loc[
-        split_seq_solve.__name__,
+        rolling_horizon_greedy_solve.__name__,
         ("score", "mean_ratio_to_reference"),
     ]
 
     split_ratio_to_seq_max_runtime = summary.loc[
-        split_seq_solve.__name__,
+        rolling_horizon_greedy_solve.__name__,
         ("runtime", "max_ratio_to_reference"),
     ]
     split_ratio_to_seq_mean_runtime = summary.loc[
-        split_seq_solve.__name__,
+        rolling_horizon_greedy_solve.__name__,
         ("runtime", "mean_ratio_to_reference"),
     ]
 
@@ -102,20 +102,20 @@ def run_cell(steps, n, chunk):
 
     if SOLVE_OPTIMAL:
         seq_ratio_to_baseline_max_runtime = summary.loc[
-            seq_greedy_solve.__name__,
+            full_horizon_greedy_solve.__name__,
             ("runtime", "max_ratio_to_baseline"),
         ]
 
         seq_ratio_to_baseline_min_score = summary.loc[
-            seq_greedy_solve.__name__,
+            full_horizon_greedy_solve.__name__,
             ("score", "min_ratio_to_baseline"),
         ]
         split_ratio_to_baseline_max_runtime = summary.loc[
-            split_seq_solve.__name__,
+            rolling_horizon_greedy_solve.__name__,
             ("runtime", "max_ratio_to_baseline"),
         ]
         split_ratio_to_baseline_min_score = summary.loc[
-            split_seq_solve.__name__,
+            rolling_horizon_greedy_solve.__name__,
             ("score", "min_ratio_to_baseline"),
         ]
         new_row |= {
@@ -146,7 +146,7 @@ def main():
     with tqdm(total=total_runs, desc="Running same-start sweep") as pbar:
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = {
-                executor.submit(run_cell, steps, n, chunk): (steps, n, chunk)
+                executor.submit(run_sweep_cell, steps, n, chunk): (steps, n, chunk)
                 for steps, n, chunk in cells
             }
             for fut in as_completed(futures):

@@ -59,7 +59,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--reference-method",
-        default="seq_greedy_solve",
+        default="full_horizon_greedy_solve",
         help="Reference method used as denominator for ratio plots.",
     )
     parser.add_argument(

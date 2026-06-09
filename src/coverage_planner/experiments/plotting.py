@@ -478,7 +478,7 @@ def _efficiency_ratios(
     *,
     x_axis: str = "agents",
     series_by: str = "method",
-    reference_method: str = "seq_greedy_solve",
+    reference_method: str = "full_horizon_greedy_solve",
     filters: dict | None = None,
 ) -> pd.DataFrame:
     if x_axis not in PLOT_DIMENSION_COLUMNS:
@@ -551,7 +551,7 @@ def _efficiency_summary(
     *,
     x_axis: str = "agents",
     series_by: str = "method",
-    reference_method: str = "seq_greedy_solve",
+    reference_method: str = "full_horizon_greedy_solve",
     filters: dict | None = None,
 ) -> pd.DataFrame:
     ratios = _efficiency_ratios(
@@ -668,7 +668,7 @@ def render_efficiency_lines(
     *,
     x_axis: str = "agents",
     series_by: str = "method",
-    reference_method: str = "seq_greedy_solve",
+    reference_method: str = "full_horizon_greedy_solve",
     output_root: Path = Path("results"),
     filters: dict | None = None,
 ) -> Path:
@@ -721,7 +721,7 @@ def render_efficiency_gif(
     animate_over: str,
     x_axis: str = "agents",
     series_by: str = "method",
-    reference_method: str = "seq_greedy_solve",
+    reference_method: str = "full_horizon_greedy_solve",
     output_root: Path = Path("results"),
     filters: dict | None = None,
     frame_duration: float = DEFAULT_FRAME_DURATION,
@@ -967,7 +967,7 @@ def render_scatter(
     meta: dict,
     *,
     series_by: str = "method",
-    reference_method: str = "seq_greedy_solve",
+    reference_method: str = "full_horizon_greedy_solve",
     output_root: Path = Path("results"),
     filters: dict | None = None,
 ) -> Path:
@@ -1033,7 +1033,7 @@ def render_scatter_gif(
     *,
     animate_over: str,
     series_by: str = "method",
-    reference_method: str = "seq_greedy_solve",
+    reference_method: str = "full_horizon_greedy_solve",
     output_root: Path = Path("results"),
     filters: dict | None = None,
     frame_duration: float = DEFAULT_FRAME_DURATION,
